@@ -1,9 +1,15 @@
 package app_test
 
 import (
+	// "fmt"
+
 	"fmt"
+	"os"
 	"sync"
+	"syscall"
 	"testing"
+
+	_ "unsafe" // required for accessing a private variable from app package
 
 	"github.com/igulib/app"
 	"github.com/igulib/app/test/test_unit"
@@ -643,14 +649,13 @@ func TestErrors(t *testing.T) {
 	// Test QuitAll error
 	test_unit_impl.ResetTrackers()
 	tu2.ResetDefaults()
-	// tu2.SetQuitParameters(produceError)
 
 	opId, badStateUnits, err := m.QuitAll()
 	require.Equal(t, app.ErrUnitHasUnexpectedState, err)
 	require.Equal(t, []string{n2}, badStateUnits,
 		"tu2 can't quit because it is in STStarted state")
 	r = m.WaitForCompletion()
-	fmt.Printf("after QuitAll: %+v\n", r)
+
 	require.Equal(t, r.OpId, opId, "opIds must be equal")
 	require.Equal(t, false, r.OK)
 	require.Equal(t, true, r.CollateralErrors,
@@ -948,4 +953,47 @@ func TestWaitConcurrently(t *testing.T) {
 	require.Equal(t, true, r.OK)
 
 	require.EqualValues(t, 0, tu1.GoroutineCount(), "goroutines must not leak")
+}
+
+//go:linkname sysSignalChan github.com/igulib/app.sysSignalChan
+var sysSignalChan chan os.Signal
+
+func TestSignals(t *testing.T) {
+
+	err := app.EnableSignalInterception(true, true)
+	require.Equal(t, nil, err)
+
+	err = app.EnableSignalInterception(true, true)
+	require.Equal(t, app.ErrAlreadyEnabled, err)
+
+	err = app.DisableSignalInterception()
+	require.Equal(t, nil, err)
+
+	err = app.DisableSignalInterception()
+	require.Equal(t, app.ErrAlreadyDisabled, err)
+
+	err = app.EnableSignalInterception(true, true)
+	require.Equal(t, nil, err)
+
+	const total = 10
+	wg := sync.WaitGroup{}
+	wg.Add(total)
+	for x := 0; x < total; x++ {
+		go func() {
+			defer wg.Done()
+			app.WaitUntilGlobalShutdownInitiated()
+			require.Equal(t, true, app.IsShuttingDown())
+		}()
+	}
+
+	sysSignalChan <- syscall.SIGINT // emulate SIGINT
+	wg.Wait()
+
+	err = app.EnableSignalInterception(true, true)
+	require.Equal(t, app.ErrShuttingDown, err)
+
+	err = app.DisableSignalInterception()
+	require.Equal(t, app.ErrShuttingDown, err)
+
+	require.Equal(t, true, app.IsShuttingDown())
 }

@@ -3,8 +3,11 @@ package app
 import (
 	"errors"
 	"fmt"
+	"os"
+	"os/signal"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -82,6 +85,114 @@ func IsShuttingDown() bool {
 // sequentially or in parallel.
 func WaitUntilGlobalShutdownInitiated() {
 	<-GlobalShutdownChan
+}
+
+var (
+	sysSignalChan              chan os.Signal
+	sysSignalCancelChan        chan struct{}
+	sysSignalCancelConfirmChan chan struct{}
+	sysSignalOpInProgress      atomic.Bool
+	sysSignalsSetUpDone        bool
+)
+
+var (
+	ErrAlreadyEnabled  = errors.New("already enabled")
+	ErrAlreadyDisabled = errors.New("already disabled")
+)
+
+// EnableSignalInterception enables your app to intercept
+// os signals SIGINT and/or SIGTERM
+// to initiate graceful app shutdown
+// (SIGKILL can't be intercepted by user application).
+//
+// Returns:
+// ErrBusy if previous operation is not complete;
+// ErrShuttingDown if app is already shutting down;
+// ErrAlreadyEnabled if already enabled.
+//
+// Example:
+//
+//	func main() {
+//		fmt.Println("== app started ==")
+//		// Start app tasks here in separate goroutines...
+//		_ = app.EnableSignalInterception(true, true)
+//		app.WaitUntilGlobalShutdownInitiated()
+//		// Do graceful shutdown routines here...
+//		fmt.Println("== app exited ==")
+//	}
+func EnableSignalInterception(interceptSIGINT, interceptSIGTERM bool) error {
+	if !(interceptSIGINT || interceptSIGTERM) {
+		return nil
+	}
+	swapped := sysSignalOpInProgress.CompareAndSwap(false, true)
+	if !swapped {
+		return ErrBusy
+	}
+	defer func() {
+		sysSignalOpInProgress.CompareAndSwap(true, false)
+	}()
+	if IsShuttingDown() {
+		return ErrShuttingDown
+	}
+
+	if sysSignalsSetUpDone {
+		return ErrAlreadyEnabled
+	}
+
+	signals := make([]os.Signal, 0, 2)
+	if interceptSIGINT {
+		signals = append(signals, syscall.SIGINT)
+	}
+	if interceptSIGTERM {
+		signals = append(signals, syscall.SIGTERM)
+	}
+	sysSignalChan = make(chan os.Signal, 1)
+	sysSignalCancelChan = make(chan struct{})
+	sysSignalCancelConfirmChan = make(chan struct{})
+	go func() {
+		select {
+		case <-sysSignalChan:
+			_ = InitiateShutdown()
+		case <-sysSignalCancelChan:
+			signal.Stop(sysSignalChan)
+			sysSignalsSetUpDone = false
+			close(sysSignalCancelConfirmChan)
+		}
+	}()
+
+	signal.Notify(sysSignalChan, signals...)
+	sysSignalsSetUpDone = true
+	return nil
+}
+
+// DisableSignalInterception cancels the effect of
+// previously called EnableSysSignalInterception
+// and disconnects system signals from global app shutdown mechanism.
+//
+// Returns:
+// ErrBusy if previous operation is not complete;
+// ErrShuttingDown if app is already shutting down;
+// ErrAlreadyDisabled if already canceled or not enabled.
+func DisableSignalInterception() error {
+	swapped := sysSignalOpInProgress.CompareAndSwap(false, true)
+	if !swapped {
+		return ErrBusy
+	}
+	defer func() {
+		sysSignalOpInProgress.CompareAndSwap(true, false)
+	}()
+
+	if IsShuttingDown() {
+		return ErrShuttingDown
+	}
+
+	if !sysSignalsSetUpDone {
+		return ErrAlreadyDisabled
+	}
+
+	close(sysSignalCancelChan)
+	<-sysSignalCancelConfirmChan
+	return nil
 }
 
 // M is a global UnitManager for your app that is created automatically.
@@ -691,10 +802,12 @@ func (um *UnitManager) performOperationByLayers(
 		if skipRemainingLayers { // if previous layer operation failed
 			for _, unitName := range layer.UnitNames {
 				runner := um.units[unitName].Runner()
+				runner.lastOpLock.Lock()
 				runner.lastOpName = currentOpName
 				runner.lastOpId = um.currentOpId
 				runner.lastResult.OK = false
 				runner.lastResult.CollateralError = ErrSkippedByUnitManager
+				runner.lastOpLock.Unlock()
 			}
 			continue
 		}
@@ -704,15 +817,19 @@ func (um *UnitManager) performOperationByLayers(
 			// Check if unit is already in the target state
 			if state == tState {
 				// Renew lastOpName, lastOpId and lastResult
+				runner.lastOpLock.Lock()
 				runner.lastOpName = currentOpName
 				runner.lastOpId = um.currentOpId
 				runner.lastResult.CollateralError = nil
 				runner.lastResult.OK = true
+				runner.lastOpLock.Unlock()
 			} else if state == progressState {
 				// Renew lastOpName and lastOpId if unit is already in progressState
 				// but don't send control message.
+				runner.lastOpLock.Lock()
 				runner.lastOpName = currentOpName
 				runner.lastOpId = um.currentOpId
+				runner.lastOpLock.Unlock()
 			}
 
 			// Send control message only if unit has completed previous operation
@@ -963,15 +1080,19 @@ func (um *UnitManager) QuitAll() (int64, []string, error) {
 			// Check if unit is already in the target state
 			if state == tState {
 				// Renew lastOpName, lastOpId and lastResult
+				runner.lastOpLock.Lock()
 				runner.lastOpName = currentOpName
 				runner.lastOpId = um.currentOpId
 				runner.lastResult.CollateralError = nil
 				runner.lastResult.OK = true
+				runner.lastOpLock.Unlock()
 			} else if state == progressState {
 				// Renew lastOpName and lastOpId if unit is already in progressState
 				// but don't send control message.
+				runner.lastOpLock.Lock()
 				runner.lastOpName = currentOpName
 				runner.lastOpId = um.currentOpId
+				runner.lastOpLock.Unlock()
 			}
 
 			// Send control message only if unit has completed previous operation
@@ -1023,10 +1144,13 @@ func (um *UnitManager) QuitAll() (int64, []string, error) {
 		case <-timer.C:
 			// Check for units that timed out
 			for _, unitName := range okUnits {
-				state := um.units[unitName].Runner().state.Load()
+				runner := um.units[unitName].Runner()
+				state := runner.state.Load()
 				if state == STQuitting {
-					um.units[unitName].Runner().lastResult.CollateralError = ErrTimedOut
-					um.units[unitName].Runner().lastResult.OK = false
+					runner.lastOpLock.Lock()
+					runner.lastResult.CollateralError = ErrTimedOut
+					runner.lastResult.OK = false
+					runner.lastOpLock.Unlock()
 				}
 			}
 		}
@@ -1117,39 +1241,39 @@ LifecycleLoop:
 	for msg := range r.lifecycleMsgChannel {
 		switch msg.msgType {
 		case lcmStart:
-			// TODO: remove race condition, synchronize access to r.lastResult!
 			lastResult := r.owner.StartUnit()
 			r.lastOpLock.Lock()
 			r.lastResult = lastResult
-			r.lastOpLock.Unlock()
 			if lastResult.OK {
 				r.state.Store(STStarted)
 			} else {
 				r.state.Store(STPaused)
 			}
+			r.lastOpLock.Unlock()
 			r.notifyCurrentOpComplete()
 		case lcmPause:
 			lastResult := r.owner.PauseUnit()
 			r.lastOpLock.Lock()
 			r.lastResult = lastResult
-			r.lastOpLock.Unlock()
 			if lastResult.OK {
 				r.state.Store(STPaused)
 			} else {
 				r.state.Store(STStarted)
 			}
+			r.lastOpLock.Unlock()
 			r.notifyCurrentOpComplete()
 		case lcmQuit:
 			lastResult := r.owner.QuitUnit()
 			r.lastOpLock.Lock()
 			r.lastResult = lastResult
-			r.lastOpLock.Unlock()
 			if lastResult.OK {
 				r.state.Store(STQuit)
+				r.lastOpLock.Unlock()
 				r.notifyCurrentOpComplete()
 				break LifecycleLoop
 			} else {
 				r.state.Store(STPaused)
+				r.lastOpLock.Unlock()
 				r.notifyCurrentOpComplete()
 			}
 
