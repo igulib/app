@@ -850,7 +850,11 @@ func (um *UnitManager) performOperationByLayers(
 		currentLayer := layer
 		go func() {
 			for _, unitName := range currentLayer.UnitNames {
-				<-um.units[unitName].Runner().opDoneChannel
+				runner := um.units[unitName].Runner()
+				runner.lastOpLock.Lock()
+				unitOpDoneCh := runner.opDoneChannel
+				runner.lastOpLock.Unlock()
+				<-unitOpDoneCh
 			}
 			close(bulkCompleteChan)
 		}()

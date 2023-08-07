@@ -40,11 +40,11 @@ jobs:
           echo "COVERAGE=$COVERAGE" >> $GITHUB_ENV
           echo "COLOR=$COLOR" >> $GITHUB_ENV
     - name: Create gist and coverage badge
-      uses: schneegans/dynamic-badges-action@v1.4.0
+      uses: schneegans/dynamic-badges-action@v1.6.0
       with:
         auth: ${{ secrets.SECRET_FOR_GIST_CODECOV_BADGE }}
-        gistID: 3075e755ec4893a57fcaf5b9ecc5dbd2
-        filename: errs-codecov-ubuntu.json
+        gistID: 327daff90ba9c66ebc33ce58f2f98821
+        filename: app-codecov-ubuntu.json
         label: codecov
         message: ${{ env.COVERAGE }}%
         color: ${{ env.COLOR }}
