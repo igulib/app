@@ -1,6 +1,6 @@
 # App
 
-[![Ubuntu-latest](https://github.com/igulib/app/actions/workflows/ubuntu-latest.yml/badge.svg)](https://github.com/igulib/app/actions/workflows/ubuntu-latest.yml) [![Macos-latest](https://github.com/igulib/app/actions/workflows/macos-latest.yml/badge.svg)](https://github.com/igulib/app/actions/workflows/macos-latest.yml) [![Windows-latest](https://github.com/igulib/app/actions/workflows/windows-latest.yml/badge.svg)](https://github.com/igulib/app/actions/workflows/windows-latest.yml) [![Ubuntu-coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/igulib/3075e755ec4893a57fcaf5b9ecc5dbd2/raw/app-codecov-ubuntu.json)](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/igulib/3075e755ec4893a57fcaf5b9ecc5dbd2/raw/app-codecov-ubuntu.json)
+[![Ubuntu-latest](https://github.com/igulib/app/actions/workflows/ubuntu-latest.yml/badge.svg)](https://github.com/igulib/app/actions/workflows/ubuntu-latest.yml) [![Macos-latest](https://github.com/igulib/app/actions/workflows/macos-latest.yml/badge.svg)](https://github.com/igulib/app/actions/workflows/macos-latest.yml) [![Windows-latest](https://github.com/igulib/app/actions/workflows/windows-latest.yml/badge.svg)](https://github.com/igulib/app/actions/workflows/windows-latest.yml)
 
 The **app** package simplifies creation and management of
 large asynchronous Go applications.
