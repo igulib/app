@@ -1,8 +1,6 @@
 package app_test
 
 import (
-	// "fmt"
-
 	"fmt"
 	"os"
 	"sync"
