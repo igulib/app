@@ -14,9 +14,9 @@ import (
 // Defaults
 
 var (
-	DefaultUnitStartPeriodMillis int64 = 4000
-	DefaultUnitPausePeriodMillis int64 = 4000
-	DefaultUnitQuitPeriodMillis  int64 = 4000
+	DefaultUnitStartPeriodMillis int64 = 5000
+	DefaultUnitPausePeriodMillis int64 = 5000
+	DefaultUnitQuitPeriodMillis  int64 = 5000
 
 	DefaultUnitLifecycleChannelBufferSize = 1
 )
@@ -276,7 +276,7 @@ type UnitManager struct {
 
 func NewUnitManager() *UnitManager {
 	um := &UnitManager{
-		units: make(map[string]IUnit, 10),
+		units: make(map[string]IUnit),
 	}
 
 	um.completionReportChannel = make(chan struct{})
