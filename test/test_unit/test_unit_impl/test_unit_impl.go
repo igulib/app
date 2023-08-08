@@ -97,10 +97,8 @@ func (tu *TestUnitImpl) PauseUnit() app.UnitOperationResult {
 
 	r := tu.finalizeLifecycleOp(params, availabilityOnSuccess)
 
-	if !params.SimulateFailure {
-		// Wait for all ongoing API requests to complete.
-		tu.apiRequestCompletionWaitGroup.Wait()
-	}
+	// Wait for all ongoing API requests to complete.
+	tu.apiRequestCompletionWaitGroup.Wait()
 
 	if r.OK {
 		PauseOrderTracker.Add(tu.runner.Name())
