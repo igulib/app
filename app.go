@@ -261,11 +261,21 @@ type UnitManagerOperationResult struct {
 }
 
 type UnitManager struct {
+	// Lock is intended to protect the integrity of a series of
+	// UnitManager operations.
+	// There is no need to acquire this lock
+	// if you call UnitManager methods from a single goroutine.
+	// Each UnitManager method is thread-safe on its own,
+	// but to ensure that the sequence of method calls is not interrupted
+	// from another goroutine,
+	// you should acquire this lock first.
+	Lock sync.Mutex
+
 	startupScheme  []MultiUnitOperationConfig
 	shutdownScheme []MultiUnitOperationConfig
 	units          map[string]IUnit
 
-	currentOperation atomic.Int32
+	currentOpType atomic.Int32
 
 	// Channel to be closed when current operation completes.
 	completionReportChannel     chan struct{}
@@ -293,12 +303,12 @@ func NewUnitManager() *UnitManager {
 // as long as the UnitManager itself is valid because,
 // once the Unit is added to the UnitManager, it can't be removed.
 func (um *UnitManager) GetUnit(name string) (IUnit, error) {
-	swapped := um.currentOperation.CompareAndSwap(umcoIdle, umcoGetInfo)
+	swapped := um.currentOpType.CompareAndSwap(umcoIdle, umcoGetInfo)
 	if !swapped {
 		return nil, ErrBusy
 	}
 	unit, ok := um.units[name]
-	um.currentOperation.Store(umcoIdle)
+	um.currentOpType.Store(umcoIdle)
 	if !ok {
 		return nil, ErrUnitNotFound
 	}
@@ -308,7 +318,7 @@ func (um *UnitManager) GetUnit(name string) (IUnit, error) {
 // ListUnitStates lists all units previously added to UnitManager
 // and their current states.
 func (um *UnitManager) ListUnitStates() (map[string]int32, error) {
-	swapped := um.currentOperation.CompareAndSwap(umcoIdle, umcoGetInfo)
+	swapped := um.currentOpType.CompareAndSwap(umcoIdle, umcoGetInfo)
 	if !swapped {
 		return nil, ErrBusy
 	}
@@ -316,7 +326,7 @@ func (um *UnitManager) ListUnitStates() (map[string]int32, error) {
 	for name, unit := range um.units {
 		m[name] = unit.Runner().State()
 	}
-	um.currentOperation.Store(umcoIdle)
+	um.currentOpType.Store(umcoIdle)
 	return m, nil
 }
 
@@ -336,12 +346,12 @@ func (um *UnitManager) getUniqueUnitNames(nameList []string) []string {
 // SetMainOperationScheme sets the operation scheme that defines
 // StartScheme and PauseScheme order and respective timeouts.
 func (um *UnitManager) SetMainOperationScheme(scheme []MultiUnitOperationConfig) error {
-	swapped := um.currentOperation.CompareAndSwap(umcoIdle, umcoModifyScheme)
+	swapped := um.currentOpType.CompareAndSwap(umcoIdle, umcoModifyScheme)
 	if !swapped {
 		return ErrBusy
 	}
 	defer func() {
-		um.currentOperation.CompareAndSwap(umcoModifyScheme, umcoIdle)
+		um.currentOpType.CompareAndSwap(umcoModifyScheme, umcoIdle)
 	}()
 
 	um.startupScheme = scheme
@@ -361,12 +371,12 @@ func (um *UnitManager) SetMainOperationScheme(scheme []MultiUnitOperationConfig)
 // SetCustomShutdownScheme sets the shutdown scheme for UnitManager.
 // If not set, the shutdown order will be reverse to startup order.
 func (um *UnitManager) SetCustomShutdownScheme(scheme []MultiUnitOperationConfig) error {
-	swapped := um.currentOperation.CompareAndSwap(umcoIdle, umcoModifyScheme)
+	swapped := um.currentOpType.CompareAndSwap(umcoIdle, umcoModifyScheme)
 	if !swapped {
 		return ErrBusy
 	}
 	defer func() {
-		um.currentOperation.CompareAndSwap(umcoModifyScheme, umcoIdle)
+		um.currentOpType.CompareAndSwap(umcoModifyScheme, umcoIdle)
 	}()
 
 	um.shutdownScheme = scheme
@@ -387,13 +397,13 @@ func (um *UnitManager) SetCustomShutdownScheme(scheme []MultiUnitOperationConfig
 // AddUnit is thread-safe.
 func (um *UnitManager) AddUnit(unit IUnit) error {
 	// Protect from re-entry
-	swapped := um.currentOperation.CompareAndSwap(umcoIdle, umcoInit)
+	swapped := um.currentOpType.CompareAndSwap(umcoIdle, umcoInit)
 	if !swapped {
 		return ErrBusy
 	}
 
 	defer func() {
-		swapped := um.currentOperation.CompareAndSwap(umcoInit, umcoIdle)
+		swapped := um.currentOpType.CompareAndSwap(umcoInit, umcoIdle)
 		if !swapped {
 			panic("igulib/app.UnitManager.AddUnit operation atomicity violated.")
 		}
@@ -630,7 +640,7 @@ func (um *UnitManager) initiateSingleOperation(
 	controlMsg string,
 	timeout int64) (int64, error) {
 
-	swapped := um.currentOperation.CompareAndSwap(umcoIdle, currentOp)
+	swapped := um.currentOpType.CompareAndSwap(umcoIdle, currentOp)
 	if !swapped {
 		return NegativeOpId, ErrBusy
 	}
@@ -640,20 +650,20 @@ func (um *UnitManager) initiateSingleOperation(
 	// Find unit
 	unit, ok := um.units[unitName]
 	if !ok {
-		um.currentOperation.CompareAndSwap(currentOp, umcoIdle)
+		um.currentOpType.CompareAndSwap(currentOp, umcoIdle)
 		return NegativeOpId, ErrUnitNotFound
 	}
 
 	// Check unit is in correct state
 	state := unit.Runner().state.Load()
 	if !(state == iState || state == progressState || state == tState) {
-		um.currentOperation.CompareAndSwap(currentOp, umcoIdle)
+		um.currentOpType.CompareAndSwap(currentOp, umcoIdle)
 		return NegativeOpId, ErrUnitHasUnexpectedState
 	}
 
 	err := um.prepareNextManagerAsyncOperation(currentOpName, []string{unitName})
 	if err != nil {
-		um.currentOperation.CompareAndSwap(currentOp, umcoIdle)
+		um.currentOpType.CompareAndSwap(currentOp, umcoIdle)
 		return NegativeOpId, ErrBusy
 	}
 
@@ -663,9 +673,9 @@ func (um *UnitManager) initiateSingleOperation(
 		swapped := um.completionReportChannelOpen.CompareAndSwap(true, false)
 		if swapped {
 			um.fillInLastResult()
-			close(um.completionReportChannel)
 			// Set current operation to umcoIdle.
-			um.currentOperation.CompareAndSwap(currentOp, umcoIdle)
+			um.currentOpType.CompareAndSwap(currentOp, umcoIdle)
+			close(um.completionReportChannel)
 		}
 		return um.currentOpId, nil
 	}
@@ -717,9 +727,9 @@ func (um *UnitManager) initiateSingleOperation(
 		swapped := um.completionReportChannelOpen.CompareAndSwap(true, false)
 		if swapped {
 			um.fillInLastResult()
-			close(um.completionReportChannel)
 			// Set current operation to umcoIdle.
-			um.currentOperation.CompareAndSwap(currentOp, umcoIdle)
+			um.currentOpType.CompareAndSwap(currentOp, umcoIdle)
+			close(um.completionReportChannel)
 		}
 	}()
 
@@ -730,7 +740,7 @@ func (um *UnitManager) StartScheme() (int64, []string, error) {
 	currentOp := umcoStart
 
 	// Return immediately if previous operation not complete
-	swapped := um.currentOperation.CompareAndSwap(umcoIdle, currentOp)
+	swapped := um.currentOpType.CompareAndSwap(umcoIdle, currentOp)
 	if !swapped {
 		return NegativeOpId, make([]string, 0), ErrBusy
 	}
@@ -766,7 +776,7 @@ func (um *UnitManager) StartScheme() (int64, []string, error) {
 	const atomicityViolated = "igulib/app.UnitManager.StartSchemeAsync operation atomicity violated. Please report this issue on github."
 
 	if len(badStateUnits) != 0 {
-		swapped := um.currentOperation.CompareAndSwap(currentOp, umcoIdle)
+		swapped := um.currentOpType.CompareAndSwap(currentOp, umcoIdle)
 		if !swapped {
 			panic(atomicityViolated)
 		}
@@ -776,7 +786,7 @@ func (um *UnitManager) StartScheme() (int64, []string, error) {
 	err := um.prepareNextManagerAsyncOperation(
 		currentOpName, um.getStartupSchemeUnitNames())
 	if err != nil {
-		swapped := um.currentOperation.CompareAndSwap(currentOp, umcoIdle)
+		swapped := um.currentOpType.CompareAndSwap(currentOp, umcoIdle)
 		if !swapped {
 			panic(atomicityViolated)
 		}
@@ -914,9 +924,9 @@ func (um *UnitManager) performOperationByLayers(
 	swapped := um.completionReportChannelOpen.CompareAndSwap(true, false)
 	if swapped {
 		um.fillInLastResult()
-		close(um.completionReportChannel)
 		// Set current operation to umcoIdle.
-		um.currentOperation.CompareAndSwap(currentOp, umcoIdle)
+		um.currentOpType.CompareAndSwap(currentOp, umcoIdle)
+		close(um.completionReportChannel)
 	}
 }
 
@@ -956,7 +966,7 @@ func (um *UnitManager) WaitForCompletion() UnitManagerOperationResult {
 
 func (um *UnitManager) PauseScheme() (int64, []string, error) {
 	// Return immediately if previous operation not complete
-	swapped := um.currentOperation.CompareAndSwap(umcoIdle, umcoPause)
+	swapped := um.currentOpType.CompareAndSwap(umcoIdle, umcoPause)
 	if !swapped {
 		return NegativeOpId, make([]string, 0), ErrBusy
 	}
@@ -975,7 +985,7 @@ func (um *UnitManager) PauseScheme() (int64, []string, error) {
 	// Create shutdownScheme if it doesn't exist
 	if um.shutdownScheme == nil {
 		if um.startupScheme == nil {
-			swapped := um.currentOperation.CompareAndSwap(currentOp, umcoIdle)
+			swapped := um.currentOpType.CompareAndSwap(currentOp, umcoIdle)
 			if !swapped {
 				panic(atomicityViolated)
 			}
@@ -1006,7 +1016,7 @@ func (um *UnitManager) PauseScheme() (int64, []string, error) {
 	}
 
 	if len(badStateUnits) != 0 {
-		swapped := um.currentOperation.CompareAndSwap(currentOp, umcoIdle)
+		swapped := um.currentOpType.CompareAndSwap(currentOp, umcoIdle)
 		if !swapped {
 			panic(atomicityViolated)
 		}
@@ -1016,7 +1026,7 @@ func (um *UnitManager) PauseScheme() (int64, []string, error) {
 	err := um.prepareNextManagerAsyncOperation(
 		currentOpName, um.getShutdownSchemeUnitNames())
 	if err != nil {
-		swapped := um.currentOperation.CompareAndSwap(currentOp, umcoIdle)
+		swapped := um.currentOpType.CompareAndSwap(currentOp, umcoIdle)
 		if !swapped {
 			panic(atomicityViolated)
 		}
@@ -1046,7 +1056,7 @@ func (um *UnitManager) QuitAll() (int64, []string, error) {
 	tState := STQuit
 
 	// Return immediately if previous operation not complete
-	swapped := um.currentOperation.CompareAndSwap(umcoIdle, umcoQuit)
+	swapped := um.currentOpType.CompareAndSwap(umcoIdle, umcoQuit)
 	if !swapped {
 		return NegativeOpId, make([]string, 0), ErrBusy
 	}
@@ -1069,7 +1079,7 @@ func (um *UnitManager) QuitAll() (int64, []string, error) {
 	err := um.prepareNextManagerAsyncOperation(
 		currentOpName, um.getShutdownSchemeUnitNames())
 	if err != nil {
-		swapped := um.currentOperation.CompareAndSwap(umcoQuit, umcoIdle)
+		swapped := um.currentOpType.CompareAndSwap(umcoQuit, umcoIdle)
 		if !swapped {
 			panic(atomicityViolated)
 		}
@@ -1175,12 +1185,12 @@ func (um *UnitManager) QuitAll() (int64, []string, error) {
 		swapped = um.completionReportChannelOpen.CompareAndSwap(true, false)
 		if swapped {
 			um.fillInLastResult()
-			close(um.completionReportChannel)
 			// Set current operation to umcoIdle.
-			swapped := um.currentOperation.CompareAndSwap(umcoQuit, umcoIdle)
+			swapped := um.currentOpType.CompareAndSwap(umcoQuit, umcoIdle)
 			if !swapped {
 				panic(atomicityViolated)
 			}
+			close(um.completionReportChannel)
 		}
 	}()
 

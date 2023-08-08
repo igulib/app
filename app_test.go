@@ -202,7 +202,7 @@ func TestUnitManagerSchemeOperations(t *testing.T) {
 		"there must be no goroutine leakage after unit quits")
 	require.Equal(t, result.OpId, opId, "operation IDs must match")
 
-	// Unit's API must NOT be available after unit has been quit
+	// Unit's API must NOT be available after unit quit
 	av := tuif1.UnitAvailability()
 	require.Contains(t, []app.UnitAvailability{
 		app.UNotAvailable}, av,
@@ -239,6 +239,12 @@ func TestTimeouts(t *testing.T) {
 	n2 := "tu2"
 	n3 := "tu3"
 	n4 := "tu4"
+
+	// Protect the integrity of a series of UnitManager operations.
+	// It has no use here except demo because this test uses a single goroutine
+	// to call UnitManager methods.
+	m.Lock.Lock()
+	defer m.Lock.Unlock()
 
 	// Add 4 units
 	tu1 := test_unit_impl.NewTestUnit(n1)
@@ -303,8 +309,6 @@ func TestTimeouts(t *testing.T) {
 
 	r = m.WaitForCompletion()
 	state = tu1.Runner().State()
-
-	// fmt.Printf("%+v\n", r)
 
 	require.Equal(t, app.STStarted, state, "tu1 must be in STStarted after second start try")
 	require.Equal(t, r.OpId, opId, "opIds must be equal")
