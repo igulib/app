@@ -301,14 +301,14 @@ func TestTimeouts(t *testing.T) {
 	require.Equal(t, app.ErrTimedOut, r.ResultMap[n1].CollateralError,
 		"timeout must occur at first start try")
 
-	state := tu1.Runner().State()
+	state := tu1.UnitRunner().State()
 	require.Equal(t, app.STStarting, state, "tu1 must be in STStarting after first start try")
 
 	opId, err = m.Start(n1)
 	require.Equal(t, nil, err)
 
 	r = m.WaitForCompletion()
-	state = tu1.Runner().State()
+	state = tu1.UnitRunner().State()
 
 	require.Equal(t, app.STStarted, state, "tu1 must be in STStarted after second start try")
 	require.Equal(t, r.OpId, opId, "opIds must be equal")
@@ -359,7 +359,7 @@ func TestTimeouts(t *testing.T) {
 	r = m.WaitForCompletion()
 	require.Equal(t, r.OpId, opId, "opIds must be equal")
 
-	state = tu1.Runner().State()
+	state = tu1.UnitRunner().State()
 	require.Equal(t, app.STStarted, state,
 		"tu1 must be in STStarted after second scheme start try")
 	require.Equal(t, true, r.OK,
@@ -517,7 +517,7 @@ func TestListUnitStates(t *testing.T) {
 		n4: app.STQuit,
 	}, states)
 
-	require.Equal(t, n1, tu1.Runner().Name())
+	require.Equal(t, n1, tu1.UnitRunner().Name())
 	_, err = m.GetUnit("not_exists")
 	require.Equal(t, app.ErrUnitNotFound, err)
 }
@@ -593,7 +593,7 @@ func TestErrors(t *testing.T) {
 	require.Equal(t, test_unit.ErrDummy, r.ResultMap[n2].CollateralError,
 		"dummy error is expected to occur")
 
-	state := tu2.Runner().State()
+	state := tu2.UnitRunner().State()
 	require.Equal(t, app.STPaused, state, "unit state must not change when start failed")
 
 	// Test StartScheme error
@@ -606,13 +606,13 @@ func TestErrors(t *testing.T) {
 	require.Equal(t, test_unit.ErrDummy, r.ResultMap[n2].CollateralError,
 		"dummy error is expected to occur")
 
-	require.Equal(t, app.STStarted, tu1.Runner().State(),
+	require.Equal(t, app.STStarted, tu1.UnitRunner().State(),
 		"unit state must not change when start failed")
-	require.Equal(t, app.STPaused, tu2.Runner().State(),
+	require.Equal(t, app.STPaused, tu2.UnitRunner().State(),
 		"unit state must not change when start failed")
-	require.Equal(t, app.STStarted, tu3.Runner().State(),
+	require.Equal(t, app.STStarted, tu3.UnitRunner().State(),
 		"other units in the same layer must start successfully")
-	require.Equal(t, app.STPaused, tu4.Runner().State(),
+	require.Equal(t, app.STPaused, tu4.UnitRunner().State(),
 		"units in subsequent layers must not start")
 
 	// Start scheme without errors
@@ -636,13 +636,13 @@ func TestErrors(t *testing.T) {
 	require.Equal(t, test_unit.ErrDummy, r.ResultMap[n2].CollateralError,
 		"dummy error is expected to occur")
 
-	require.Equal(t, app.STPaused, tu1.Runner().State(),
+	require.Equal(t, app.STPaused, tu1.UnitRunner().State(),
 		"tu1 must be paused last")
-	require.Equal(t, app.STStarted, tu2.Runner().State(),
+	require.Equal(t, app.STStarted, tu2.UnitRunner().State(),
 		"tu2 must fail to pause")
-	require.Equal(t, app.STPaused, tu3.Runner().State(),
+	require.Equal(t, app.STPaused, tu3.UnitRunner().State(),
 		"tu3 must pause")
-	require.Equal(t, app.STPaused, tu4.Runner().State(),
+	require.Equal(t, app.STPaused, tu4.UnitRunner().State(),
 		"tu4 must pause")
 
 	require.Equal(t, []string{"tu4", "tu3", "tu1"}, test_unit_impl.PauseOrderTracker.Get(),
@@ -669,10 +669,10 @@ func TestErrors(t *testing.T) {
 	require.Equal(t, app.ErrUnitHasUnexpectedState, err)
 	require.Equal(t, app.NegativeOpId, opId)
 
-	require.Equal(t, app.STQuit, tu1.Runner().State())
-	require.Equal(t, app.STStarted, tu2.Runner().State())
-	require.Equal(t, app.STQuit, tu3.Runner().State())
-	require.Equal(t, app.STQuit, tu4.Runner().State())
+	require.Equal(t, app.STQuit, tu1.UnitRunner().State())
+	require.Equal(t, app.STStarted, tu2.UnitRunner().State())
+	require.Equal(t, app.STQuit, tu3.UnitRunner().State())
+	require.Equal(t, app.STQuit, tu4.UnitRunner().State())
 
 	_, _ = m.Pause(n2)
 	r = m.WaitForCompletion()
@@ -681,7 +681,7 @@ func TestErrors(t *testing.T) {
 	_, _, _ = m.QuitAll()
 	r = m.WaitForCompletion()
 	require.Equal(t, true, r.OK, "no errors because rest of the units are already in STQuit")
-	require.Equal(t, app.STQuit, tu2.Runner().State())
+	require.Equal(t, app.STQuit, tu2.UnitRunner().State())
 
 	require.EqualValues(t, 0, tu1.GoroutineCount(),
 		"must be no goroutine leakage after unit quits")
@@ -783,11 +783,11 @@ func TestSetCustomShutdownScheme(t *testing.T) {
 
 	require.Equal(t, []string{"tu1"}, test_unit_impl.StartOrderTracker.Get())
 
-	require.Equal(t, app.STStarted, tu1.Runner().State(),
+	require.Equal(t, app.STStarted, tu1.UnitRunner().State(),
 		"unit must start successfully")
-	require.Equal(t, app.STPaused, tu3.Runner().State(),
+	require.Equal(t, app.STPaused, tu3.UnitRunner().State(),
 		"unit start must fail")
-	require.Equal(t, app.STPaused, tu2.Runner().State(),
+	require.Equal(t, app.STPaused, tu2.UnitRunner().State(),
 		"unit start must be skipped")
 
 	tu3.ResetDefaults()

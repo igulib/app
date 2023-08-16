@@ -201,10 +201,10 @@ var M = NewUnitManager()
 
 // IUnit defines an interface to be implemented by a custom Unit.
 type IUnit interface {
-	Runner() *UnitLifecycleRunner
-	StartUnit() UnitOperationResult
-	PauseUnit() UnitOperationResult
-	QuitUnit() UnitOperationResult
+	UnitRunner() *UnitLifecycleRunner
+	UnitStart() UnitOperationResult
+	UnitPause() UnitOperationResult
+	UnitQuit() UnitOperationResult
 	UnitAvailability() UnitAvailability
 }
 
@@ -324,7 +324,7 @@ func (um *UnitManager) ListUnitStates() (map[string]int32, error) {
 	}
 	m := make(map[string]int32, len(um.units))
 	for name, unit := range um.units {
-		m[name] = unit.Runner().State()
+		m[name] = unit.UnitRunner().State()
 	}
 	um.currentOpType.Store(umcoIdle)
 	return m, nil
@@ -409,7 +409,7 @@ func (um *UnitManager) AddUnit(unit IUnit) error {
 		}
 	}()
 
-	name := unit.Runner().name
+	name := unit.UnitRunner().name
 	_, alreadyExists := um.units[name]
 	if alreadyExists {
 		// No need to reset um.currentOperation to umcoIdle here
@@ -417,7 +417,7 @@ func (um *UnitManager) AddUnit(unit IUnit) error {
 		return ErrUnitAlreadyExists
 	}
 
-	swapped = unit.Runner().state.CompareAndSwap(STNotInitialized, STInitializing)
+	swapped = unit.UnitRunner().state.CompareAndSwap(STNotInitialized, STInitializing)
 	if !swapped {
 		return ErrUnitHasUnexpectedState // normally can't happen
 	}
@@ -425,16 +425,16 @@ func (um *UnitManager) AddUnit(unit IUnit) error {
 	um.units[name] = unit
 
 	// Start unit's lifecycle message loop
-	err := unit.Runner().prepareNextAsyncOperation(UmcoInit, um.currentOpId)
+	err := unit.UnitRunner().prepareNextAsyncOperation(UmcoInit, um.currentOpId)
 	if err != nil {
 		return ErrBusy // normally can't happen
 	}
-	go unit.Runner().run()
-	unit.Runner().runnerLock.Lock()
-	doneChan := unit.Runner().runnerOpDoneChannel
-	unit.Runner().runnerLock.Unlock()
+	go unit.UnitRunner().run()
+	unit.UnitRunner().runnerLock.Lock()
+	doneChan := unit.UnitRunner().runnerOpDoneChannel
+	unit.UnitRunner().runnerLock.Unlock()
 	<-doneChan
-	if unit.Runner().state.Load() != STPaused {
+	if unit.UnitRunner().state.Load() != STPaused {
 		return ErrOperationFailed // normally can't happen
 	}
 	return nil
@@ -655,7 +655,7 @@ func (um *UnitManager) initiateSingleOperation(
 	}
 
 	// Check unit is in correct state
-	state := unit.Runner().state.Load()
+	state := unit.UnitRunner().state.Load()
 	if !(state == iState || state == progressState || state == tState) {
 		um.currentOpType.CompareAndSwap(currentOp, umcoIdle)
 		return NegativeOpId, ErrUnitHasUnexpectedState
@@ -680,7 +680,7 @@ func (um *UnitManager) initiateSingleOperation(
 		return um.currentOpId, nil
 	}
 
-	runner := unit.Runner()
+	runner := unit.UnitRunner()
 
 	// Renew lastOpName and lastOpId if unit is already in progressState
 	// but don't send control message.
@@ -766,7 +766,7 @@ func (um *UnitManager) StartScheme() (int64, []string, error) {
 		for _, unitName := range layer.UnitNames {
 			// Unit with name from um.startupScheme is guaranteed to exist
 			unit := um.units[unitName]
-			state := unit.Runner().state.Load()
+			state := unit.UnitRunner().state.Load()
 			if !(state == iState || state == progressState || state == tState) {
 				badStateUnits = append(badStateUnits, unitName)
 			}
@@ -818,7 +818,7 @@ func (um *UnitManager) performOperationByLayers(
 	for _, layer := range currentScheme {
 		if skipRemainingLayers { // if previous layer operation failed
 			for _, unitName := range layer.UnitNames {
-				runner := um.units[unitName].Runner()
+				runner := um.units[unitName].UnitRunner()
 				runner.runnerLock.Lock()
 				runner.lastRunnerOpName = currentOpName
 				runner.lastRunnerOpId = um.currentOpId
@@ -829,7 +829,7 @@ func (um *UnitManager) performOperationByLayers(
 			continue
 		}
 		for _, unitName := range layer.UnitNames {
-			runner := um.units[unitName].Runner()
+			runner := um.units[unitName].UnitRunner()
 			state := runner.state.Load()
 			// Check if unit is already in the target state
 			if state == tState {
@@ -867,7 +867,7 @@ func (um *UnitManager) performOperationByLayers(
 		currentLayer := layer
 		go func() {
 			for _, unitName := range currentLayer.UnitNames {
-				runner := um.units[unitName].Runner()
+				runner := um.units[unitName].UnitRunner()
 				runner.runnerLock.Lock()
 				unitOpDoneCh := runner.runnerOpDoneChannel
 				runner.runnerLock.Unlock()
@@ -895,7 +895,7 @@ func (um *UnitManager) performOperationByLayers(
 		case <-timer.C:
 			// Check for units that timed out
 			for _, unitName := range currentLayer.UnitNames {
-				runner := um.units[unitName].Runner()
+				runner := um.units[unitName].UnitRunner()
 				state := runner.state.Load()
 
 				if state == progressState {
@@ -912,7 +912,7 @@ func (um *UnitManager) performOperationByLayers(
 		// (only for StartScheme).
 		if currentOp == umcoStart {
 			for _, unitName := range currentLayer.UnitNames {
-				if um.units[unitName].Runner().state.Load() != tState {
+				if um.units[unitName].UnitRunner().state.Load() != tState {
 					skipRemainingLayers = true
 
 				}
@@ -940,7 +940,7 @@ func (um *UnitManager) fillInLastResult() {
 	um.lastResult.OpId = um.currentOpId
 
 	for _, unitName := range unitNames {
-		runner := um.units[unitName].Runner()
+		runner := um.units[unitName].UnitRunner()
 		runner.runnerLock.Lock()
 		// Copy unit result only if opIds match
 		if runner.lastRunnerOpId == um.lastResult.OpId {
@@ -1008,7 +1008,7 @@ func (um *UnitManager) PauseScheme() (int64, []string, error) {
 		for _, unitName := range layer.UnitNames {
 			// Unit with name from um.shutdownScheme is guaranteed to exist
 			unit := um.units[unitName]
-			state := unit.Runner().state.Load()
+			state := unit.UnitRunner().state.Load()
 			if !(state == iState || state == progressState || state == tState) {
 				badStateUnits = append(badStateUnits, unitName)
 			}
@@ -1066,7 +1066,7 @@ func (um *UnitManager) QuitAll() (int64, []string, error) {
 	okUnits := make([]string, 0, unitsTotal)
 	badStateUnits := make([]string, 0, unitsTotal)
 	for name, unit := range um.units {
-		state := unit.Runner().state.Load()
+		state := unit.UnitRunner().state.Load()
 		if state == iState || state == progressState || state == tState {
 			okUnits = append(okUnits, name)
 		} else {
@@ -1096,7 +1096,7 @@ func (um *UnitManager) QuitAll() (int64, []string, error) {
 	go func() {
 		// Send quit message to all units in legitimate state.
 		for _, unitName := range okUnits {
-			runner := um.units[unitName].Runner()
+			runner := um.units[unitName].UnitRunner()
 			state := runner.state.Load()
 			// Check if unit is already in the target state
 			if state == tState {
@@ -1133,7 +1133,7 @@ func (um *UnitManager) QuitAll() (int64, []string, error) {
 		bulkCompleteChan := make(chan struct{})
 		go func() {
 			for _, unitName := range okUnits {
-				runner := um.units[unitName].Runner()
+				runner := um.units[unitName].UnitRunner()
 				runner.runnerLock.Lock()
 				doneChan := runner.runnerOpDoneChannel
 				runner.runnerLock.Unlock()
@@ -1169,7 +1169,7 @@ func (um *UnitManager) QuitAll() (int64, []string, error) {
 		case <-timer.C:
 			// Check for units that timed out
 			for _, unitName := range okUnits {
-				runner := um.units[unitName].Runner()
+				runner := um.units[unitName].UnitRunner()
 				state := runner.state.Load()
 				if state == STQuitting {
 					runner.runnerLock.Lock()
@@ -1271,7 +1271,7 @@ LifecycleLoop:
 	for msg := range r.lifecycleMsgChannel {
 		switch msg.msgType {
 		case lcmStart:
-			lastResult := r.owner.StartUnit()
+			lastResult := r.owner.UnitStart()
 			r.runnerLock.Lock()
 			r.lastRunnerResult = lastResult
 			if lastResult.OK {
@@ -1282,7 +1282,7 @@ LifecycleLoop:
 			r.runnerLock.Unlock()
 			r.notifyCurrentOpComplete()
 		case lcmPause:
-			lastResult := r.owner.PauseUnit()
+			lastResult := r.owner.UnitPause()
 			r.runnerLock.Lock()
 			r.lastRunnerResult = lastResult
 			if lastResult.OK {
@@ -1293,7 +1293,7 @@ LifecycleLoop:
 			r.runnerLock.Unlock()
 			r.notifyCurrentOpComplete()
 		case lcmQuit:
-			lastResult := r.owner.QuitUnit()
+			lastResult := r.owner.UnitQuit()
 			r.runnerLock.Lock()
 			r.lastRunnerResult = lastResult
 			if lastResult.OK {

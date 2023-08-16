@@ -18,19 +18,19 @@ func NewDemoUnit(name string) *DemoUnitImpl {
 }
 
 // Implement IUnit interface
-func (u *DemoUnitImpl) Runner() *app.UnitLifecycleRunner {
+func (u *DemoUnitImpl) UnitRunner() *app.UnitLifecycleRunner {
 	return u.runner
 }
 
-func (u *DemoUnitImpl) StartUnit() app.UnitOperationResult {
+func (u *DemoUnitImpl) UnitStart() app.UnitOperationResult {
 	return app.UnitOperationResult{OK: true, CollateralError: nil}
 }
 
-func (u *DemoUnitImpl) PauseUnit() app.UnitOperationResult {
+func (u *DemoUnitImpl) UnitPause() app.UnitOperationResult {
 	return app.UnitOperationResult{OK: true, CollateralError: nil}
 }
 
-func (u *DemoUnitImpl) QuitUnit() app.UnitOperationResult {
+func (u *DemoUnitImpl) UnitQuit() app.UnitOperationResult {
 
 	return app.UnitOperationResult{OK: true, CollateralError: nil}
 }

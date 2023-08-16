@@ -64,7 +64,7 @@ func NewTestUnit(name string, dummyApiServiceDisabled ...bool) *TestUnitImpl {
 }
 
 // Implement app.IUnit interface
-func (tu *TestUnitImpl) Runner() *app.UnitLifecycleRunner {
+func (tu *TestUnitImpl) UnitRunner() *app.UnitLifecycleRunner {
 	return tu.runner
 }
 
@@ -72,7 +72,7 @@ func (tu *TestUnitImpl) UnitAvailability() app.UnitAvailability {
 	return app.UnitAvailability(tu.availability.Load())
 }
 
-func (tu *TestUnitImpl) StartUnit() app.UnitOperationResult {
+func (tu *TestUnitImpl) UnitStart() app.UnitOperationResult {
 	if !tu.apiServiceDisabled {
 		// Start service only if it is not running yet
 		swapped := tu.apiServiceStarted.CompareAndSwap(false, true)
@@ -90,7 +90,7 @@ func (tu *TestUnitImpl) StartUnit() app.UnitOperationResult {
 	return r
 }
 
-func (tu *TestUnitImpl) PauseUnit() app.UnitOperationResult {
+func (tu *TestUnitImpl) UnitPause() app.UnitOperationResult {
 
 	params := &tu.pauseParameters
 	availabilityOnSuccess := app.UTemporarilyUnavailable
@@ -107,7 +107,7 @@ func (tu *TestUnitImpl) PauseUnit() app.UnitOperationResult {
 	return r
 }
 
-func (tu *TestUnitImpl) QuitUnit() app.UnitOperationResult {
+func (tu *TestUnitImpl) UnitQuit() app.UnitOperationResult {
 	if !tu.apiServiceDisabled {
 		swapped := tu.apiServiceQuitRequestChanClosed.CompareAndSwap(false, true)
 		if swapped {
