@@ -70,7 +70,7 @@ func TestUnitManagerSchemeOperations(t *testing.T) {
 			QuitTimeoutMillis:  100,
 		},
 	}
-	err = m.SetMainOperationScheme(operationScheme)
+	err = m.SetOperationScheme(operationScheme)
 	require.Equal(t, nil, err)
 
 	// Repeat start and pause several times
@@ -240,12 +240,6 @@ func TestTimeouts(t *testing.T) {
 	n3 := "tu3"
 	n4 := "tu4"
 
-	// Protect the integrity of a series of UnitManager operations.
-	// It has no use here except demo because this test uses a single goroutine
-	// to call UnitManager methods.
-	// m.Lock.Lock()
-	// defer m.Lock.Unlock()
-
 	// Add 4 units
 	tu1 := test_unit_impl.NewTestUnit(n1)
 	err := m.AddUnit(tu1)
@@ -283,7 +277,7 @@ func TestTimeouts(t *testing.T) {
 			QuitTimeoutMillis:  100,
 		},
 	}
-	err = m.SetMainOperationScheme(operationScheme)
+	err = m.SetOperationScheme(operationScheme)
 	require.Equal(t, nil, err)
 
 	// Make tu1 produce a timeout on start
@@ -453,7 +447,7 @@ func TestListUnitStates(t *testing.T) {
 			UnitNames: []string{n4},
 		},
 	}
-	err = m.SetMainOperationScheme(operationScheme)
+	err = m.SetOperationScheme(operationScheme)
 	require.Equal(t, nil, err)
 
 	states, err := m.ListUnitStates()
@@ -573,7 +567,7 @@ func TestErrors(t *testing.T) {
 			QuitTimeoutMillis:  100,
 		},
 	}
-	err = m.SetMainOperationScheme(operationScheme)
+	err = m.SetOperationScheme(operationScheme)
 	require.Equal(t, nil, err)
 
 	// Make tu1 produce an error on start
@@ -735,7 +729,7 @@ func TestSetCustomShutdownScheme(t *testing.T) {
 			QuitTimeoutMillis:  100,
 		},
 	}
-	err = m.SetMainOperationScheme(operationScheme)
+	err = m.SetOperationScheme(operationScheme)
 	require.Equal(t, nil, err)
 
 	customShutdownScheme := []app.MultiUnitOperationConfig{
@@ -759,7 +753,7 @@ func TestSetCustomShutdownScheme(t *testing.T) {
 		},
 	}
 
-	err = m.SetCustomShutdownScheme(customShutdownScheme)
+	err = m.SetCustomPauseScheme(customShutdownScheme)
 	require.Equal(t, nil, err)
 
 	simulateTimeout := test_unit.OpParameters{
@@ -841,7 +835,7 @@ func TestOperationAtomicity(t *testing.T) {
 			QuitTimeoutMillis:  100,
 		},
 	}
-	err = m.SetMainOperationScheme(opScheme)
+	err = m.SetOperationScheme(opScheme)
 	require.Equal(t, nil, err)
 
 	_, _, err = m.StartSchemeAsync()
@@ -856,9 +850,9 @@ func TestOperationAtomicity(t *testing.T) {
 	_, err = m.ListUnitStates()
 	require.Equal(t, app.ErrBusy, err)
 
-	err = m.SetMainOperationScheme(opScheme)
+	err = m.SetOperationScheme(opScheme)
 	require.Equal(t, app.ErrBusy, err)
-	err = m.SetCustomShutdownScheme(opScheme)
+	err = m.SetCustomPauseScheme(opScheme)
 	require.Equal(t, app.ErrBusy, err)
 
 	_, err = m.StartAsync(n1)
@@ -1000,7 +994,7 @@ func TestSignals(t *testing.T) {
 	require.Equal(t, true, app.IsShuttingDown())
 }
 
-func TestSyncOperations(t *testing.T) {
+func TestSingleBlockingOperations(t *testing.T) {
 	test_unit_impl.ResetTrackers()
 	n1 := "tu1"
 	m := app.NewUnitManager()
@@ -1019,4 +1013,186 @@ func TestSyncOperations(t *testing.T) {
 	require.Equal(t, nil, err, "tu1 unit must quit successfully")
 	require.Equal(t, app.UNotAvailable, tu1.UnitAvailability(), "tu1 must be unavailable")
 
+}
+
+func TestBlockingSchemeOperations(t *testing.T) {
+	test_unit_impl.ResetTrackers()
+
+	m := app.NewUnitManager()
+
+	n1 := "tu1"
+	n2 := "tu2"
+	n3 := "tu3"
+	n4 := "tu4"
+
+	// Add 4 units
+	tu1 := test_unit_impl.NewTestUnit(n1)
+	err := m.AddUnit(tu1)
+	require.Equal(t, nil, err)
+
+	tu2 := test_unit_impl.NewTestUnit(n2)
+	err = m.AddUnit(tu2)
+	require.Equal(t, nil, err)
+
+	tu3 := test_unit_impl.NewTestUnit(n3)
+	err = m.AddUnit(tu3)
+	require.Equal(t, nil, err)
+
+	tu4 := test_unit_impl.NewTestUnit(n4)
+	err = m.AddUnit(tu4)
+	require.Equal(t, nil, err)
+
+	// Get reference to the first unit by its name and cast it to
+	// its facade interface.
+	unit, err := m.GetUnit(n1)
+	require.Equal(t, nil, err)
+	tuif1, ok := unit.(test_unit.TestUnit)
+	require.Equal(t, true, ok, "app.IUnit must successfully cast to test_unit.TestUnit")
+
+	operationScheme := []app.MultiUnitOperationConfig{
+		{
+			UnitNames:          []string{n1},
+			StartTimeoutMillis: 100,
+			PauseTimeoutMillis: 100,
+			QuitTimeoutMillis:  100,
+		},
+		{
+			UnitNames:          []string{n2, n3},
+			StartTimeoutMillis: 100,
+			PauseTimeoutMillis: 100,
+			QuitTimeoutMillis:  100,
+		},
+		{
+			UnitNames:          []string{n4},
+			StartTimeoutMillis: 100,
+			PauseTimeoutMillis: 100,
+			QuitTimeoutMillis:  100,
+		},
+	}
+	err = m.SetOperationScheme(operationScheme)
+	require.Equal(t, nil, err)
+
+	// Repeat start and pause several times
+	for i := 0; i < 2; i++ {
+		// Start single unit
+		err := m.Start(n2)
+		require.Equal(t, nil, err, "single unit must successfully start")
+
+		// Start all units of the scheme
+		r, err := m.StartScheme()
+		require.Equal(t, nil, err)
+		require.True(t, r.OK, "scheme must start successfully")
+		require.False(t, r.CollateralErrors, "no collateral errors expected")
+
+		r, err = m.StartScheme()
+		require.Equal(t, nil, err, "no errors are expected when starting the already started scheme")
+		require.True(t, r.OK, "scheme must start successfully")
+		require.False(t, r.CollateralErrors, "no collateral errors expected")
+
+		// Repeated start stress-test
+		for x := 0; x < 5; x++ {
+			err = m.Start(n1, 100)
+			require.Equal(t, nil, err,
+				"repeated start must succeed if unit has already started")
+		}
+
+		// Repeated scheme start stress-test
+		for x := 0; x < 5; x++ {
+			r, err = m.StartScheme()
+			require.Equal(t, nil, err,
+				"repeated scheme start must succeed if unit has already started")
+			require.True(t, r.OK, "scheme operation expected to be successful")
+		}
+
+		// Unit's API must be available
+		av := tuif1.UnitAvailability()
+		require.Equal(t, app.UAvailable, av,
+			"unit 1 API must be available after successful start")
+		av = tu2.UnitAvailability()
+		require.Equal(t, app.UAvailable, av,
+			"unit 2 API must be available after successful start")
+		av = tu3.UnitAvailability()
+		require.Equal(t, app.UAvailable, av,
+			"unit 3 API must be available after successful start")
+		av = tu4.UnitAvailability()
+		require.Equal(t, app.UAvailable, av,
+			"unit 4 API must be available after successful start")
+		respChan, err := tuif1.SendApiRequest("test_msg", 0)
+		require.Equal(t, nil, err)
+		response, err := tuif1.WaitForApiResponse(respChan, 100)
+		require.Equal(t, nil, err)
+		require.Equal(t, "test_msg", response, "api response must echo message back")
+
+		// Pause single unit
+		err = m.Pause(n3)
+		require.Equal(t, nil, err, "single unit must be successfully paused")
+
+		// Pause rest of the units of the scheme
+		r, err = m.PauseScheme()
+		require.Equal(t, nil, err, "scheme must pause successfully")
+
+		require.True(t, r.OK, "scheme must pause successfully")
+		require.False(t, r.CollateralErrors, "no collateral errors expected")
+		require.NotEqual(t, int32(0), tuif1.GoroutineCount(),
+			"internal goroutine must not exit on pause")
+
+		// Unit's API must NOT be available
+		av = tuif1.UnitAvailability()
+		require.Contains(t, []app.UnitAvailability{
+			app.UNotAvailable, app.UTemporarilyUnavailable}, av,
+			"unit's API must NOT be available when unit paused")
+		_, err = tuif1.SendApiRequest("test_msg", 0)
+		require.Equal(t, test_unit.ErrNotAvailable, err)
+
+		// Repeated pause stress-test
+		for x := 0; x < 5; x++ {
+			err = m.Pause(n1, 100)
+			require.Equal(t, nil, err,
+				"repeated unit pause must succeed if unit has already paused")
+		}
+
+		// Repeated scheme pause stress-test
+		for x := 0; x < 5; x++ {
+			r, err = m.PauseScheme()
+			require.Equal(t, nil, err,
+				"repeated scheme pause must succeed if scheme has already paused")
+		}
+	}
+
+	// Quit single unit
+	err = m.Quit(n2)
+	require.Equal(t, nil, err, "single unit must quit successfully")
+
+	// Quit all units
+	r, err := m.QuitAll()
+	require.Equal(t, nil, err, "all units must quit successfully")
+
+	require.True(t, r.OK, "all units must quit successfully")
+	require.False(t, r.CollateralErrors, "no collateral errors expected")
+	require.EqualValues(t, 0, tuif1.GoroutineCount(),
+		"there must be no goroutine leakage after unit quits")
+
+	// Unit's API must NOT be available after unit quit
+	av := tuif1.UnitAvailability()
+	require.Contains(t, []app.UnitAvailability{
+		app.UNotAvailable}, av,
+		"unit's API must NOT be available after quit")
+	_, err = tuif1.SendApiRequest("test_msg", 0)
+	require.Equal(t, test_unit.ErrNotAvailable, err)
+
+	// Repeated quit stress-test
+	for x := 0; x < 5; x++ {
+		err = m.Quit(n1, 100)
+		require.Equal(t, nil, err, "repeated Quit must succeed if unit has already quit")
+	}
+
+	// Repeated quit all stress-test
+	for x := 0; x < 5; x++ {
+		r, err = m.QuitAll()
+		require.Equal(t, nil, err, "repeated QuitAll must succeed if units have already quit")
+		require.Equal(t, true, r.OK, "result must be OK")
+	}
+
+	require.EqualValues(t, 0, tuif1.GoroutineCount(),
+		"there must be no goroutine leakage after unit quits")
 }

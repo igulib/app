@@ -306,6 +306,9 @@ func NewUnitManager() *UnitManager {
 // as long as the UnitManager itself is valid because,
 // once the Unit is added to the UnitManager, it can't be removed.
 func (um *UnitManager) GetUnit(name string) (IUnit, error) {
+	um.opLock.Lock()
+	defer um.opLock.Unlock()
+
 	swapped := um.currentOpType.CompareAndSwap(umcoIdle, umcoGetInfo)
 	if !swapped {
 		return nil, ErrBusy
@@ -321,6 +324,9 @@ func (um *UnitManager) GetUnit(name string) (IUnit, error) {
 // ListUnitStates lists all units previously added to UnitManager
 // and their current states.
 func (um *UnitManager) ListUnitStates() (map[string]int32, error) {
+	um.opLock.Lock()
+	defer um.opLock.Unlock()
+
 	swapped := um.currentOpType.CompareAndSwap(umcoIdle, umcoGetInfo)
 	if !swapped {
 		return nil, ErrBusy
@@ -346,9 +352,15 @@ func (um *UnitManager) getUniqueUnitNames(nameList []string) []string {
 	return absentList
 }
 
-// SetMainOperationScheme sets the operation scheme that defines
-// StartScheme and PauseScheme order and respective timeouts.
-func (um *UnitManager) SetMainOperationScheme(scheme []MultiUnitOperationConfig) error {
+// SetOperationScheme sets the operation scheme that defines both
+// unit start and pause orders and respective timeouts.
+// The pause order will be the reverse of the start order.
+// If there is a need of a custom pause order, use SetCustomPauseScheme
+// method in addition to this.
+func (um *UnitManager) SetOperationScheme(scheme []MultiUnitOperationConfig) error {
+	um.opLock.Lock()
+	defer um.opLock.Unlock()
+
 	swapped := um.currentOpType.CompareAndSwap(umcoIdle, umcoModifyScheme)
 	if !swapped {
 		return ErrBusy
@@ -371,9 +383,12 @@ func (um *UnitManager) SetMainOperationScheme(scheme []MultiUnitOperationConfig)
 	return fmt.Errorf("unit(s) not found: %v: %w", absentList, ErrUnitNotFound)
 }
 
-// SetCustomShutdownScheme sets the shutdown scheme for UnitManager.
+// SetCustomPauseScheme sets the shutdown scheme for UnitManager.
 // If not set, the shutdown order will be reverse to startup order.
-func (um *UnitManager) SetCustomShutdownScheme(scheme []MultiUnitOperationConfig) error {
+func (um *UnitManager) SetCustomPauseScheme(scheme []MultiUnitOperationConfig) error {
+	um.opLock.Lock()
+	defer um.opLock.Unlock()
+
 	swapped := um.currentOpType.CompareAndSwap(umcoIdle, umcoModifyScheme)
 	if !swapped {
 		return ErrBusy
@@ -399,11 +414,10 @@ func (um *UnitManager) SetCustomShutdownScheme(scheme []MultiUnitOperationConfig
 
 // AddUnit is thread-safe.
 func (um *UnitManager) AddUnit(unit IUnit) error {
+	// Lock the asynchronous operation series
+	um.opLock.Lock()
+	defer um.opLock.Unlock()
 
-	// um.opLock.Lock()
-	// defer um.opLock.Unlock()
-
-	// Protect from re-entry
 	swapped := um.currentOpType.CompareAndSwap(umcoIdle, umcoInit)
 	if !swapped {
 		return ErrBusy
@@ -550,8 +564,11 @@ func (um *UnitManager) StartAsync(unitName string, timeoutMillis ...int64) (int6
 		timeout)
 }
 
-// Start starts the unit synchronously.
+// Start starts the unit and blocks until complete.
 func (um *UnitManager) Start(unitName string, timeoutMillis ...int64) error {
+	um.opLock.Lock()
+	defer um.opLock.Unlock()
+
 	id, err := um.StartAsync(unitName, timeoutMillis...)
 	if err != nil {
 		return err
@@ -570,7 +587,6 @@ func (um *UnitManager) Start(unitName string, timeoutMillis ...int64) error {
 // Use WaitUntilComplete method to wait until operation completes
 // and get the result.
 func (um *UnitManager) PauseAsync(unitName string, timeoutMillis ...int64) (int64, error) {
-
 	// Choose correct timeout:
 	var timeout int64 = 0
 	// First try the supplied timeout
@@ -610,8 +626,11 @@ func (um *UnitManager) PauseAsync(unitName string, timeoutMillis ...int64) (int6
 		timeout)
 }
 
-// Pause pauses the unit synchronously.
+// Pause pauses the unit and blocks until complete.
 func (um *UnitManager) Pause(unitName string, timeoutMillis ...int64) error {
+	um.opLock.Lock()
+	defer um.opLock.Unlock()
+
 	id, err := um.PauseAsync(unitName, timeoutMillis...)
 	if err != nil {
 		return err
@@ -630,7 +649,6 @@ func (um *UnitManager) Pause(unitName string, timeoutMillis ...int64) error {
 // Use WaitUntilComplete method to wait until operation completes
 // and get the result.
 func (um *UnitManager) QuitAsync(unitName string, timeoutMillis ...int64) (int64, error) {
-
 	// Choose correct timeout:
 	var timeout int64 = 0
 	// First try the supplied timeout
@@ -670,8 +688,11 @@ func (um *UnitManager) QuitAsync(unitName string, timeoutMillis ...int64) (int64
 		timeout)
 }
 
-// Quit quits the unit synchronously.
+// Quit quits the unit and blocks until complete.
 func (um *UnitManager) Quit(unitName string, timeoutMillis ...int64) error {
+	um.opLock.Lock()
+	defer um.opLock.Unlock()
+
 	id, err := um.QuitAsync(unitName, timeoutMillis...)
 	if err != nil {
 		return err
@@ -857,6 +878,36 @@ func (um *UnitManager) StartSchemeAsync() (int64, []string, error) {
 	)
 
 	return um.currentOpId, badStateUnits, nil
+}
+
+// StartScheme starts scheme synchronously and blocks until it is complete.
+func (um *UnitManager) StartScheme() (UnitManagerOperationResult, error) {
+	um.opLock.Lock()
+	defer um.opLock.Unlock()
+
+	opId, failedUnits, err := um.StartSchemeAsync()
+	r := UnitManagerOperationResult{
+		ResultMap: make(map[string]UnitOperationResult, 0),
+	}
+
+	if err != nil {
+		for _, failedUnit := range failedUnits {
+			r.CollateralErrors = true
+			r.OpId = opId
+			r.ResultMap[failedUnit] = UnitOperationResult{
+				CollateralError: ErrOperationFailed,
+			}
+		}
+		return r, err
+	}
+	r = um.WaitUntilComplete()
+	if r.OpId != opId {
+		r.OK = false
+	}
+	if r.OK {
+		return r, nil
+	}
+	return r, ErrOperationFailed
 }
 
 func (um *UnitManager) performOperationByLayers(
@@ -1100,6 +1151,36 @@ func (um *UnitManager) PauseSchemeAsync() (int64, []string, error) {
 	return um.currentOpId, badStateUnits, nil
 }
 
+// PauseScheme pauses scheme synchronously and blocks until it is complete.
+func (um *UnitManager) PauseScheme() (UnitManagerOperationResult, error) {
+	um.opLock.Lock()
+	defer um.opLock.Unlock()
+
+	opId, failedUnits, err := um.PauseSchemeAsync()
+	r := UnitManagerOperationResult{
+		ResultMap: make(map[string]UnitOperationResult, 0),
+	}
+
+	if err != nil {
+		for _, failedUnit := range failedUnits {
+			r.CollateralErrors = true
+			r.OpId = opId
+			r.ResultMap[failedUnit] = UnitOperationResult{
+				CollateralError: ErrOperationFailed,
+			}
+		}
+		return r, err
+	}
+	r = um.WaitUntilComplete()
+	if r.OpId != opId {
+		r.OK = false
+	}
+	if r.OK {
+		return r, nil
+	}
+	return r, ErrOperationFailed
+}
+
 // QuitAllAsync quits all units asynchronously in parallel.
 // Units must be in one of [STPaused, STQuitting, STQuit] states
 // in order to complete this operation successfully.
@@ -1256,6 +1337,36 @@ func (um *UnitManager) QuitAllAsync() (int64, []string, error) {
 	}
 
 	return um.currentOpId, badStateUnits, nil
+}
+
+// QuitAll quits all units of the UnitManager and blocks until it is complete.
+func (um *UnitManager) QuitAll() (UnitManagerOperationResult, error) {
+	um.opLock.Lock()
+	defer um.opLock.Unlock()
+
+	opId, failedUnits, err := um.QuitAllAsync()
+	r := UnitManagerOperationResult{
+		ResultMap: make(map[string]UnitOperationResult, 0),
+	}
+
+	if err != nil {
+		for _, failedUnit := range failedUnits {
+			r.CollateralErrors = true
+			r.OpId = opId
+			r.ResultMap[failedUnit] = UnitOperationResult{
+				CollateralError: ErrOperationFailed,
+			}
+		}
+		return r, err
+	}
+	r = um.WaitUntilComplete()
+	if r.OpId != opId {
+		r.OK = false
+	}
+	if r.OK {
+		return r, nil
+	}
+	return r, ErrOperationFailed
 }
 
 // UnitLifecycleRunner runs the lifecycle message loop for each Unit.
