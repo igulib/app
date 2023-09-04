@@ -50,6 +50,12 @@ var (
 	ErrSkippedByUnitManager     = errors.New("skipped by UnitManager")
 	ErrTimedOut                 = errors.New("timed out")
 	ErrShuttingDown             = errors.New("already shutting down")
+
+	// ErrOperationIdMismatch means that WaitUntilComplete method
+	// has been waiting for wrong operation. This may be a sign of a race condition
+	// when you call UnitManager methods from different goroutines without
+	// proper synchronization.
+	ErrOperationIdMismatch = errors.New("operation ID mismatch")
 )
 
 // GlobalShutdownChan closes as the effect of InitiateShutdown call.
@@ -261,15 +267,12 @@ type UnitManagerOperationResult struct {
 }
 
 type UnitManager struct {
-	// Lock is intended to protect the integrity of a series of
+	// opLock protects a series of
 	// UnitManager operations.
-	// There is no need to acquire this lock
-	// if you call UnitManager methods from a single goroutine.
 	// Each UnitManager method is thread-safe on its own,
 	// but to ensure that the sequence of method calls is not interrupted
-	// from another goroutine,
-	// you should acquire this lock first.
-	Lock sync.Mutex
+	// from another goroutine, opLock should be acquired first.
+	opLock sync.Mutex
 
 	startupScheme  []MultiUnitOperationConfig
 	shutdownScheme []MultiUnitOperationConfig
@@ -292,7 +295,7 @@ func NewUnitManager() *UnitManager {
 	um.completionReportChannel = make(chan struct{})
 
 	// Initially completionReportChannel is closed
-	// so that WaitForCompletion method doesn't block
+	// so that WaitUntilComplete method doesn't block
 	// if accidentally called.
 	close(um.completionReportChannel)
 	return um
@@ -396,6 +399,10 @@ func (um *UnitManager) SetCustomShutdownScheme(scheme []MultiUnitOperationConfig
 
 // AddUnit is thread-safe.
 func (um *UnitManager) AddUnit(unit IUnit) error {
+
+	// um.opLock.Lock()
+	// defer um.opLock.Unlock()
+
 	// Protect from re-entry
 	swapped := um.currentOpType.CompareAndSwap(umcoIdle, umcoInit)
 	if !swapped {
@@ -500,10 +507,10 @@ func (um *UnitManager) findUnitSchemeLayer(
 	return nil
 }
 
-// Start asynchronously starts the specified unit.
-// Use WaitForCompletion method to wait until operation completes
+// StartAsync asynchronously starts the specified unit.
+// Use WaitUntilComplete method to wait until operation completes
 // and get the result.
-func (um *UnitManager) Start(unitName string, timeoutMillis ...int64) (int64, error) {
+func (um *UnitManager) StartAsync(unitName string, timeoutMillis ...int64) (int64, error) {
 	// Choose correct timeout:
 	var timeout int64 = 0
 	// First try the supplied timeout
@@ -543,10 +550,26 @@ func (um *UnitManager) Start(unitName string, timeoutMillis ...int64) (int64, er
 		timeout)
 }
 
-// Pause asynchronously pauses the specified unit.
-// Use WaitForCompletion method to wait until operation completes
+// Start starts the unit synchronously.
+func (um *UnitManager) Start(unitName string, timeoutMillis ...int64) error {
+	id, err := um.StartAsync(unitName, timeoutMillis...)
+	if err != nil {
+		return err
+	}
+	r := um.WaitUntilComplete()
+	if r.OpId != id {
+		return ErrOperationIdMismatch
+	}
+	if !r.OK {
+		return r.ResultMap[unitName].CollateralError
+	}
+	return nil
+}
+
+// PauseAsync asynchronously pauses the specified unit.
+// Use WaitUntilComplete method to wait until operation completes
 // and get the result.
-func (um *UnitManager) Pause(unitName string, timeoutMillis ...int64) (int64, error) {
+func (um *UnitManager) PauseAsync(unitName string, timeoutMillis ...int64) (int64, error) {
 
 	// Choose correct timeout:
 	var timeout int64 = 0
@@ -587,10 +610,26 @@ func (um *UnitManager) Pause(unitName string, timeoutMillis ...int64) (int64, er
 		timeout)
 }
 
-// Quit asynchronously quits the specified unit.
-// Use WaitForCompletion method to wait until operation completes
+// Pause pauses the unit synchronously.
+func (um *UnitManager) Pause(unitName string, timeoutMillis ...int64) error {
+	id, err := um.PauseAsync(unitName, timeoutMillis...)
+	if err != nil {
+		return err
+	}
+	r := um.WaitUntilComplete()
+	if r.OpId != id {
+		return ErrOperationIdMismatch
+	}
+	if !r.OK {
+		return r.ResultMap[unitName].CollateralError
+	}
+	return nil
+}
+
+// QuitAsync asynchronously quits the specified unit.
+// Use WaitUntilComplete method to wait until operation completes
 // and get the result.
-func (um *UnitManager) Quit(unitName string, timeoutMillis ...int64) (int64, error) {
+func (um *UnitManager) QuitAsync(unitName string, timeoutMillis ...int64) (int64, error) {
 
 	// Choose correct timeout:
 	var timeout int64 = 0
@@ -629,6 +668,22 @@ func (um *UnitManager) Quit(unitName string, timeoutMillis ...int64) (int64, err
 		STQuit,
 		lcmQuit,
 		timeout)
+}
+
+// Quit quits the unit synchronously.
+func (um *UnitManager) Quit(unitName string, timeoutMillis ...int64) error {
+	id, err := um.QuitAsync(unitName, timeoutMillis...)
+	if err != nil {
+		return err
+	}
+	r := um.WaitUntilComplete()
+	if r.OpId != id {
+		return ErrOperationIdMismatch
+	}
+	if !r.OK {
+		return r.ResultMap[unitName].CollateralError
+	}
+	return nil
 }
 
 func (um *UnitManager) initiateSingleOperation(
@@ -736,7 +791,7 @@ func (um *UnitManager) initiateSingleOperation(
 	return um.currentOpId, nil
 }
 
-func (um *UnitManager) StartScheme() (int64, []string, error) {
+func (um *UnitManager) StartSchemeAsync() (int64, []string, error) {
 	currentOp := umcoStart
 
 	// Return immediately if previous operation not complete
@@ -956,15 +1011,15 @@ func (um *UnitManager) fillInLastResult() {
 	}
 }
 
-// WaitForCompletion blocks until current operation completes
+// WaitUntilComplete blocks until current operation completes
 // and returns the result.
 // It is thread-safe, multiple goroutines can wait simultaneously.
-func (um *UnitManager) WaitForCompletion() UnitManagerOperationResult {
+func (um *UnitManager) WaitUntilComplete() UnitManagerOperationResult {
 	<-um.completionReportChannel
 	return um.lastResult
 }
 
-func (um *UnitManager) PauseScheme() (int64, []string, error) {
+func (um *UnitManager) PauseSchemeAsync() (int64, []string, error) {
 	// Return immediately if previous operation not complete
 	swapped := um.currentOpType.CompareAndSwap(umcoIdle, umcoPause)
 	if !swapped {
@@ -1045,10 +1100,12 @@ func (um *UnitManager) PauseScheme() (int64, []string, error) {
 	return um.currentOpId, badStateUnits, nil
 }
 
-// QuitAll quits in parallel all units that have STPaused state.
-// Names of units that have state other than [STPaused, STQuitting, STQuit]
+// QuitAllAsync quits all units asynchronously in parallel.
+// Units must be in one of [STPaused, STQuitting, STQuit] states
+// in order to complete this operation successfully.
+// Names of units that have inappropriate state
 // will be reported via the second returned parameter along with error.
-func (um *UnitManager) QuitAll() (int64, []string, error) {
+func (um *UnitManager) QuitAllAsync() (int64, []string, error) {
 	currentOpName := UmcoQuit
 	controlMsg := lcmQuit
 	iState := STPaused

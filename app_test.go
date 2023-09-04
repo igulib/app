@@ -76,21 +76,21 @@ func TestUnitManagerSchemeOperations(t *testing.T) {
 	// Repeat start and pause several times
 	for i := 0; i < 2; i++ {
 		// Start single unit
-		opId, err := m.Start(n2)
+		opId, err := m.StartAsync(n2)
 		require.Equal(t, nil, err)
-		r := m.WaitForCompletion()
+		r := m.WaitUntilComplete()
 		require.Equal(t, true, r.OK, "single unit must successfully start")
 		require.Equal(t, opId, r.OpId, "operation IDs must match")
 
 		// Start all units of the scheme
-		opId, _, err = m.StartScheme()
+		opId, _, err = m.StartSchemeAsync()
 		require.Equal(t, nil, err)
 
-		_, _, err = m.StartScheme()
+		_, _, err = m.StartSchemeAsync()
 		require.Equal(t, app.ErrBusy, err,
 			"must return error when previous operation is not complete")
 
-		r = m.WaitForCompletion()
+		r = m.WaitUntilComplete()
 		if !r.OK || r.CollateralErrors {
 			fmt.Printf("result: %+v\n", r)
 		}
@@ -100,19 +100,19 @@ func TestUnitManagerSchemeOperations(t *testing.T) {
 
 		// Repeated start stress-test
 		for x := 0; x < 5; x++ {
-			opId, err = m.Start(n1, 100)
+			opId, err = m.StartAsync(n1, 100)
 			require.Equal(t, nil, err,
 				"repeated start must succeed if unit has already started")
-			r = m.WaitForCompletion()
+			r = m.WaitUntilComplete()
 			require.Equal(t, r.OpId, opId, "operation IDs must match")
 		}
 
 		// Repeated scheme start stress-test
 		for x := 0; x < 5; x++ {
-			opId, _, err = m.StartScheme()
+			opId, _, err = m.StartSchemeAsync()
 			require.Equal(t, nil, err,
 				"repeated scheme start must succeed if unit has already started")
-			r = m.WaitForCompletion()
+			r = m.WaitUntilComplete()
 			require.Equal(t, r.OpId, opId, "operation IDs must match")
 		}
 
@@ -136,16 +136,16 @@ func TestUnitManagerSchemeOperations(t *testing.T) {
 		require.Equal(t, "test_msg", response, "api response must echo message back")
 
 		// Pause single unit
-		opId, err = m.Pause(n3)
+		opId, err = m.PauseAsync(n3)
 		require.Equal(t, nil, err)
-		r = m.WaitForCompletion()
+		r = m.WaitUntilComplete()
 		require.Equal(t, true, r.OK, "single unit must be successfully paused")
 		require.Equal(t, opId, r.OpId, "operation IDs must match")
 
 		// Pause rest of the units of the scheme
-		opId, _, err = m.PauseScheme()
+		opId, _, err = m.PauseSchemeAsync()
 		require.Equal(t, nil, err)
-		r = m.WaitForCompletion()
+		r = m.WaitUntilComplete()
 		if !r.OK || r.CollateralErrors {
 			fmt.Printf("result: %+v\n", r)
 		}
@@ -165,34 +165,34 @@ func TestUnitManagerSchemeOperations(t *testing.T) {
 
 		// Repeated pause stress-test
 		for x := 0; x < 5; x++ {
-			opId, err = m.Pause(n1, 100)
+			opId, err = m.PauseAsync(n1, 100)
 			require.Equal(t, nil, err,
 				"repeated pause must succeed if unit has already paused")
-			r = m.WaitForCompletion()
+			r = m.WaitUntilComplete()
 			require.Equal(t, r.OpId, opId, "operation IDs must match")
 		}
 
 		// Repeated scheme pause stress-test
 		for x := 0; x < 5; x++ {
-			opId, _, err = m.PauseScheme()
+			opId, _, err = m.PauseSchemeAsync()
 			require.Equal(t, nil, err,
 				"repeated scheme pause must succeed if unit has already paused")
-			r = m.WaitForCompletion()
+			r = m.WaitUntilComplete()
 			require.Equal(t, r.OpId, opId, "operation IDs must match")
 		}
 	}
 
 	// Quit single unit
-	opId, err := m.Quit(n2)
+	opId, err := m.QuitAsync(n2)
 	require.Equal(t, nil, err)
-	r := m.WaitForCompletion()
+	r := m.WaitUntilComplete()
 	require.Equal(t, true, r.OK, "single unit must successfully quit")
 	require.Equal(t, opId, r.OpId, "operation IDs must match")
 
 	// Quit all units
-	opId, _, err = m.QuitAll()
+	opId, _, err = m.QuitAllAsync()
 	require.Equal(t, nil, err)
-	result := m.WaitForCompletion()
+	result := m.WaitUntilComplete()
 	if !result.OK || result.CollateralErrors {
 		fmt.Printf("result: %+v\n", result)
 	}
@@ -212,17 +212,17 @@ func TestUnitManagerSchemeOperations(t *testing.T) {
 
 	// Repeated quit stress-test
 	for x := 0; x < 5; x++ {
-		opId, err = m.Quit(n1, 100)
+		opId, err = m.QuitAsync(n1, 100)
 		require.Equal(t, nil, err, "repeated Quit must succeed if unit has already quit")
-		result = m.WaitForCompletion()
+		result = m.WaitUntilComplete()
 		require.Equal(t, result.OpId, opId, "operation IDs must match")
 	}
 
 	// Repeated quit all stress-test
 	for x := 0; x < 5; x++ {
-		opId, _, err = m.QuitAll()
+		opId, _, err = m.QuitAllAsync()
 		require.Equal(t, nil, err, "repeated QuitAll must succeed if units have already quit")
-		result = m.WaitForCompletion()
+		result = m.WaitUntilComplete()
 		require.Equal(t, result.OpId, opId, "operation IDs must match")
 	}
 
@@ -243,8 +243,8 @@ func TestTimeouts(t *testing.T) {
 	// Protect the integrity of a series of UnitManager operations.
 	// It has no use here except demo because this test uses a single goroutine
 	// to call UnitManager methods.
-	m.Lock.Lock()
-	defer m.Lock.Unlock()
+	// m.Lock.Lock()
+	// defer m.Lock.Unlock()
 
 	// Add 4 units
 	tu1 := test_unit_impl.NewTestUnit(n1)
@@ -292,9 +292,9 @@ func TestTimeouts(t *testing.T) {
 	}
 	tu1.SetStartParameters(simulateTimeout)
 
-	opId, err := m.Start(n1)
+	opId, err := m.StartAsync(n1)
 	require.Equal(t, nil, err)
-	r := m.WaitForCompletion()
+	r := m.WaitUntilComplete()
 
 	require.Equal(t, r.OpId, opId, "opIds must be equal")
 	require.Equal(t, false, r.OK)
@@ -304,10 +304,10 @@ func TestTimeouts(t *testing.T) {
 	state := tu1.UnitRunner().State()
 	require.Equal(t, app.STStarting, state, "tu1 must be in STStarting after first start try")
 
-	opId, err = m.Start(n1)
+	opId, err = m.StartAsync(n1)
 	require.Equal(t, nil, err)
 
-	r = m.WaitForCompletion()
+	r = m.WaitUntilComplete()
 	state = tu1.UnitRunner().State()
 
 	require.Equal(t, app.STStarted, state, "tu1 must be in STStarted after second start try")
@@ -315,18 +315,18 @@ func TestTimeouts(t *testing.T) {
 	require.Equal(t, true, r.OK, "tu1 must successfully start at second try")
 
 	// Start scheme when one of the units has already started
-	opId, _, err = m.StartScheme()
+	opId, _, err = m.StartSchemeAsync()
 	require.Equal(t, nil, err)
-	r = m.WaitForCompletion()
+	r = m.WaitUntilComplete()
 	require.Equal(t, r.OpId, opId, "opIds must be equal")
 	require.Equal(t, true, r.OK,
 		"scheme must successfully start when one of the units has already started")
 	require.Equal(t, false, r.CollateralErrors)
 
 	// Pause scheme without timeout
-	opId, _, err = m.PauseScheme()
+	opId, _, err = m.PauseSchemeAsync()
 	require.Equal(t, nil, err)
-	r = m.WaitForCompletion()
+	r = m.WaitUntilComplete()
 	require.Equal(t, r.OpId, opId, "opIds must be equal")
 	require.Equal(t, true, r.OK,
 		"PauseScheme is must be successful")
@@ -337,9 +337,9 @@ func TestTimeouts(t *testing.T) {
 	// Test schemes
 
 	// Start scheme first time when tu1 simulates timeout
-	opId, _, err = m.StartScheme()
+	opId, _, err = m.StartSchemeAsync()
 	require.Equal(t, nil, err)
-	r = m.WaitForCompletion()
+	r = m.WaitUntilComplete()
 	require.Equal(t, r.OpId, opId, "opIds must be equal")
 	require.Equal(t, false, r.OK,
 		"tu1 expected to fail at StartScheme first call when tu1 simulates timeout")
@@ -354,9 +354,9 @@ func TestTimeouts(t *testing.T) {
 		"subsequent layer start must be skipped as current layer operation failed.")
 
 	// Start scheme second time when tu1 simulates timeout
-	opId, _, err = m.StartScheme()
+	opId, _, err = m.StartSchemeAsync()
 	require.Equal(t, nil, err)
-	r = m.WaitForCompletion()
+	r = m.WaitUntilComplete()
 	require.Equal(t, r.OpId, opId, "opIds must be equal")
 
 	state = tu1.UnitRunner().State()
@@ -369,9 +369,9 @@ func TestTimeouts(t *testing.T) {
 	// Pause scheme when tu1 simulates timeout
 	tu1.SetPauseParameters(simulateTimeout)
 
-	opId, _, err = m.PauseScheme()
+	opId, _, err = m.PauseSchemeAsync()
 	require.Equal(t, nil, err)
-	r = m.WaitForCompletion()
+	r = m.WaitUntilComplete()
 
 	require.Equal(t, r.OpId, opId, "opIds must be equal")
 	require.Equal(t, false, r.OK,
@@ -382,9 +382,9 @@ func TestTimeouts(t *testing.T) {
 		"other units must pause successfully even if one unit fails")
 
 	// Pause scheme second attempt
-	opId, _, err = m.PauseScheme()
+	opId, _, err = m.PauseSchemeAsync()
 	require.Equal(t, nil, err)
-	r = m.WaitForCompletion()
+	r = m.WaitUntilComplete()
 
 	require.Equal(t, r.OpId, opId, "opIds must be equal")
 	require.Equal(t, true, r.OK,
@@ -393,9 +393,9 @@ func TestTimeouts(t *testing.T) {
 	// QuitAll when tu1 simulates timeout
 	tu1.SetQuitParameters(simulateTimeout)
 
-	opId, _, err = m.QuitAll()
+	opId, _, err = m.QuitAllAsync()
 	require.Equal(t, nil, err)
-	r = m.WaitForCompletion()
+	r = m.WaitUntilComplete()
 
 	require.Equal(t, r.OpId, opId, "opIds must be equal")
 	require.Equal(t, false, r.OK,
@@ -406,9 +406,9 @@ func TestTimeouts(t *testing.T) {
 		"other units must quit successfully even if one unit fails")
 
 	// QuitAll second attempt
-	opId, _, err = m.QuitAll()
+	opId, _, err = m.QuitAllAsync()
 	require.Equal(t, nil, err)
-	r = m.WaitForCompletion()
+	r = m.WaitUntilComplete()
 
 	require.Equal(t, r.OpId, opId, "opIds must be equal")
 	require.Equal(t, true, r.OK,
@@ -465,8 +465,8 @@ func TestListUnitStates(t *testing.T) {
 		n4: app.STPaused,
 	}, states)
 
-	_, _, _ = m.StartScheme()
-	_ = m.WaitForCompletion()
+	_, _, _ = m.StartSchemeAsync()
+	_ = m.WaitUntilComplete()
 
 	states, err = m.ListUnitStates()
 	require.Equal(t, nil, err)
@@ -477,8 +477,8 @@ func TestListUnitStates(t *testing.T) {
 		n4: app.STStarted,
 	}, states)
 
-	_, _, _ = m.PauseScheme()
-	_ = m.WaitForCompletion()
+	_, _, _ = m.PauseSchemeAsync()
+	_ = m.WaitUntilComplete()
 
 	states, err = m.ListUnitStates()
 	require.Equal(t, nil, err)
@@ -489,8 +489,8 @@ func TestListUnitStates(t *testing.T) {
 		n4: app.STPaused,
 	}, states)
 
-	_, _ = m.Quit(n1)
-	_ = m.WaitForCompletion()
+	_, _ = m.QuitAsync(n1)
+	_ = m.WaitUntilComplete()
 
 	states, err = m.ListUnitStates()
 	require.Equal(t, nil, err)
@@ -501,12 +501,12 @@ func TestListUnitStates(t *testing.T) {
 		n4: app.STPaused,
 	}, states)
 
-	_, _, _ = m.QuitAll()
+	_, _, _ = m.QuitAllAsync()
 	_, err = m.GetUnit(n1)
 	_, err2 := m.ListUnitStates()
 	require.Equal(t, app.ErrBusy, err)
 	require.Equal(t, app.ErrBusy, err2)
-	_ = m.WaitForCompletion()
+	_ = m.WaitUntilComplete()
 
 	states, err = m.ListUnitStates()
 	require.Equal(t, nil, err)
@@ -584,9 +584,9 @@ func TestErrors(t *testing.T) {
 	}
 	tu2.SetStartParameters(produceError)
 
-	opId, err := m.Start(n2)
+	opId, err := m.StartAsync(n2)
 	require.Equal(t, nil, err)
-	r := m.WaitForCompletion()
+	r := m.WaitUntilComplete()
 
 	require.Equal(t, r.OpId, opId, "opIds must be equal")
 	require.Equal(t, false, r.OK)
@@ -597,9 +597,9 @@ func TestErrors(t *testing.T) {
 	require.Equal(t, app.STPaused, state, "unit state must not change when start failed")
 
 	// Test StartScheme error
-	opId, _, err = m.StartScheme()
+	opId, _, err = m.StartSchemeAsync()
 	require.Equal(t, nil, err)
-	r = m.WaitForCompletion()
+	r = m.WaitUntilComplete()
 	require.Equal(t, r.OpId, opId, "opIds must be equal")
 	require.Equal(t, false, r.OK)
 	require.Equal(t, true, r.CollateralErrors)
@@ -618,17 +618,17 @@ func TestErrors(t *testing.T) {
 	// Start scheme without errors
 	tu2.ResetDefaults()
 
-	_, _, _ = m.StartScheme()
-	r = m.WaitForCompletion()
+	_, _, _ = m.StartSchemeAsync()
+	r = m.WaitUntilComplete()
 	require.Equal(t, true, r.OK)
 
 	// Test PauseScheme error
 	test_unit_impl.ResetTrackers()
 	tu2.SetPauseParameters(produceError)
 
-	opId, _, err = m.PauseScheme()
+	opId, _, err = m.PauseSchemeAsync()
 	require.Equal(t, nil, err)
-	r = m.WaitForCompletion()
+	r = m.WaitUntilComplete()
 
 	require.Equal(t, r.OpId, opId, "opIds must be equal")
 	require.Equal(t, false, r.OK)
@@ -652,11 +652,11 @@ func TestErrors(t *testing.T) {
 	test_unit_impl.ResetTrackers()
 	tu2.ResetDefaults()
 
-	opId, badStateUnits, err := m.QuitAll()
+	opId, badStateUnits, err := m.QuitAllAsync()
 	require.Equal(t, app.ErrUnitHasUnexpectedState, err)
 	require.Equal(t, []string{n2}, badStateUnits,
 		"tu2 can't quit because it is in STStarted state")
-	r = m.WaitForCompletion()
+	r = m.WaitUntilComplete()
 
 	require.Equal(t, r.OpId, opId, "opIds must be equal")
 	require.Equal(t, false, r.OK)
@@ -665,7 +665,7 @@ func TestErrors(t *testing.T) {
 	require.Equal(t, app.ErrUnitHasUnexpectedState, r.ResultMap[n2].CollateralError,
 		"dummy error is expected to occur")
 
-	opId, err = m.Quit(n2)
+	opId, err = m.QuitAsync(n2)
 	require.Equal(t, app.ErrUnitHasUnexpectedState, err)
 	require.Equal(t, app.NegativeOpId, opId)
 
@@ -674,12 +674,12 @@ func TestErrors(t *testing.T) {
 	require.Equal(t, app.STQuit, tu3.UnitRunner().State())
 	require.Equal(t, app.STQuit, tu4.UnitRunner().State())
 
-	_, _ = m.Pause(n2)
-	r = m.WaitForCompletion()
+	_, _ = m.PauseAsync(n2)
+	r = m.WaitUntilComplete()
 	require.Equal(t, true, r.OK)
 
-	_, _, _ = m.QuitAll()
-	r = m.WaitForCompletion()
+	_, _, _ = m.QuitAllAsync()
+	r = m.WaitUntilComplete()
 	require.Equal(t, true, r.OK, "no errors because rest of the units are already in STQuit")
 	require.Equal(t, app.STQuit, tu2.UnitRunner().State())
 
@@ -774,9 +774,9 @@ func TestSetCustomShutdownScheme(t *testing.T) {
 	tu3.SetStartParameters(simulateFailure)
 
 	// StartScheme with failure simulated
-	opId, _, err := m.StartScheme()
+	opId, _, err := m.StartSchemeAsync()
 	require.Equal(t, nil, err)
-	r := m.WaitForCompletion()
+	r := m.WaitUntilComplete()
 	require.Equal(t, r.OpId, opId, "opIds must be equal")
 	require.Equal(t, false, r.OK)
 	require.Equal(t, true, r.CollateralErrors, "collateral error: tu2 start skipped")
@@ -794,22 +794,22 @@ func TestSetCustomShutdownScheme(t *testing.T) {
 	test_unit_impl.StartOrderTracker.Reset()
 
 	// StartScheme successfully
-	_, _, _ = m.StartScheme()
-	r = m.WaitForCompletion()
+	_, _, _ = m.StartSchemeAsync()
+	r = m.WaitUntilComplete()
 	require.Equal(t, true, r.OK)
 	require.Equal(t, false, r.CollateralErrors)
 	require.Equal(t, []string{"tu3", "tu2"}, test_unit_impl.StartOrderTracker.Get(),
 		"unit tu1 already started so it is not in the list")
 
-	_, _, _ = m.PauseScheme()
-	r = m.WaitForCompletion()
+	_, _, _ = m.PauseSchemeAsync()
+	r = m.WaitUntilComplete()
 	require.Equal(t, true, r.OK)
 	require.Equal(t, false, r.CollateralErrors)
 	require.Equal(t, []string{"tu3", "tu1", "tu2"}, test_unit_impl.PauseOrderTracker.Get(),
 		"custom pause scheme must be used")
 
-	_, _, _ = m.QuitAll()
-	r = m.WaitForCompletion()
+	_, _, _ = m.QuitAllAsync()
+	r = m.WaitUntilComplete()
 	require.Equal(t, true, r.OK)
 	require.Equal(t, false, r.CollateralErrors)
 
@@ -844,7 +844,7 @@ func TestOperationAtomicity(t *testing.T) {
 	err = m.SetMainOperationScheme(opScheme)
 	require.Equal(t, nil, err)
 
-	_, _, err = m.StartScheme()
+	_, _, err = m.StartSchemeAsync()
 	require.Equal(t, nil, err)
 
 	// At this point UnitManager must be busy
@@ -861,25 +861,25 @@ func TestOperationAtomicity(t *testing.T) {
 	err = m.SetCustomShutdownScheme(opScheme)
 	require.Equal(t, app.ErrBusy, err)
 
-	_, err = m.Start(n1)
+	_, err = m.StartAsync(n1)
 	require.Equal(t, app.ErrBusy, err)
-	_, err = m.Pause(n1)
+	_, err = m.PauseAsync(n1)
 	require.Equal(t, app.ErrBusy, err)
-	_, err = m.Quit(n1)
-	require.Equal(t, app.ErrBusy, err)
-
-	_, _, err = m.StartScheme()
-	require.Equal(t, app.ErrBusy, err)
-	_, _, err = m.PauseScheme()
-	require.Equal(t, app.ErrBusy, err)
-	_, _, err = m.QuitAll()
+	_, err = m.QuitAsync(n1)
 	require.Equal(t, app.ErrBusy, err)
 
-	_ = m.WaitForCompletion()
-	_, _, _ = m.PauseScheme()
-	_ = m.WaitForCompletion()
-	_, _, _ = m.QuitAll()
-	r := m.WaitForCompletion()
+	_, _, err = m.StartSchemeAsync()
+	require.Equal(t, app.ErrBusy, err)
+	_, _, err = m.PauseSchemeAsync()
+	require.Equal(t, app.ErrBusy, err)
+	_, _, err = m.QuitAllAsync()
+	require.Equal(t, app.ErrBusy, err)
+
+	_ = m.WaitUntilComplete()
+	_, _, _ = m.PauseSchemeAsync()
+	_ = m.WaitUntilComplete()
+	_, _, _ = m.QuitAllAsync()
+	r := m.WaitUntilComplete()
 	require.Equal(t, true, r.OK)
 }
 
@@ -890,8 +890,8 @@ func TestMultipleConcurrentApiRequests(t *testing.T) {
 	tu1 := test_unit_impl.NewTestUnit(n1)
 	err := m.AddUnit(tu1)
 	require.Equal(t, nil, err)
-	_, _ = m.Start(n1)
-	r := m.WaitForCompletion()
+	_, _ = m.StartAsync(n1)
+	r := m.WaitUntilComplete()
 	require.Equal(t, true, r.OK)
 
 	require.Equal(t, app.UAvailable, tu1.UnitAvailability())
@@ -912,12 +912,12 @@ func TestMultipleConcurrentApiRequests(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	_, _ = m.Pause(n1)
-	r = m.WaitForCompletion()
+	_, _ = m.PauseAsync(n1)
+	r = m.WaitUntilComplete()
 	require.Equal(t, true, r.OK)
 
-	_, _ = m.Quit(n1)
-	r = m.WaitForCompletion()
+	_, _ = m.QuitAsync(n1)
+	r = m.WaitUntilComplete()
 	require.Equal(t, true, r.OK)
 
 	require.EqualValues(t, 0, tu1.GoroutineCount(), "goroutines must not leak")
@@ -930,7 +930,7 @@ func TestWaitConcurrently(t *testing.T) {
 	tu1 := test_unit_impl.NewTestUnit(n1)
 	err := m.AddUnit(tu1)
 	require.Equal(t, nil, err)
-	opId, _ := m.Start(n1)
+	opId, _ := m.StartAsync(n1)
 
 	const total = 10
 	wg := sync.WaitGroup{}
@@ -938,7 +938,7 @@ func TestWaitConcurrently(t *testing.T) {
 	for x := 0; x < total; x++ {
 		go func() {
 			defer wg.Done()
-			r := m.WaitForCompletion()
+			r := m.WaitUntilComplete()
 			require.Equal(t, true, r.OK)
 			require.Equal(t, false, r.CollateralErrors)
 			require.Equal(t, opId, r.OpId)
@@ -946,12 +946,12 @@ func TestWaitConcurrently(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	_, _ = m.Pause(n1)
-	r := m.WaitForCompletion()
+	_, _ = m.PauseAsync(n1)
+	r := m.WaitUntilComplete()
 	require.Equal(t, true, r.OK)
 
-	_, _ = m.Quit(n1)
-	r = m.WaitForCompletion()
+	_, _ = m.QuitAsync(n1)
+	r = m.WaitUntilComplete()
 	require.Equal(t, true, r.OK)
 
 	require.EqualValues(t, 0, tu1.GoroutineCount(), "goroutines must not leak")
@@ -998,4 +998,25 @@ func TestSignals(t *testing.T) {
 	require.Equal(t, app.ErrShuttingDown, err)
 
 	require.Equal(t, true, app.IsShuttingDown())
+}
+
+func TestSyncOperations(t *testing.T) {
+	test_unit_impl.ResetTrackers()
+	n1 := "tu1"
+	m := app.NewUnitManager()
+	tu1 := test_unit_impl.NewTestUnit(n1)
+	err := m.AddUnit(tu1)
+	require.Equal(t, nil, err, "tu1 unit must be added successfully")
+	err = m.Start(n1)
+	require.Equal(t, nil, err, "tu1 unit must start successfully")
+	require.Equal(t, app.UAvailable, tu1.UnitAvailability(), "tu1 must be available")
+
+	err = m.Pause(n1)
+	require.Equal(t, nil, err, "tu1 unit must pause successfully")
+	require.Equal(t, app.UTemporarilyUnavailable, tu1.UnitAvailability(), "tu1 must be temporarily unavailable")
+
+	err = m.Quit(n1)
+	require.Equal(t, nil, err, "tu1 unit must quit successfully")
+	require.Equal(t, app.UNotAvailable, tu1.UnitAvailability(), "tu1 must be unavailable")
+
 }
