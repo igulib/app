@@ -58,13 +58,14 @@ var (
 	ErrOperationIdMismatch = errors.New("operation ID mismatch")
 )
 
-// GlobalShutdownChan closes as the effect of InitiateShutdown call.
-// You can wait for the closure of this channel in any goroutine
-// but never close it directly, use InitiateShutdown instead.
+// GlobalShutdownChan signals the application shutdown after it is closed
+// by the InitiateShutdown function.
+// You can wait for the closure of this channel from any goroutine.
+// Do NOT close it manually with 'close' function, use app.InitiateShutdown instead.
 var GlobalShutdownChan = make(chan struct{})
 var globalShutdownChanClosed atomic.Bool
 
-// InitiateShutdown initiates global app shutdown.
+// InitiateShutdown initiates the global application shutdown.
 // This function doesn't block, it is thread-safe and can be called from any goroutine.
 //
 // Returns:
@@ -78,18 +79,19 @@ func InitiateShutdown() error {
 }
 
 // IsShuttingDown returns true if the app is currently shutting down.
-// It can be used e.g. by your goroutines to plan incoming request processing strategy.
+// It can be used e.g. by a goroutine to plan incoming request processing strategy,
+// even though better option would be to use unit's shutdown mechanism.
+// Also consider using GlobalShutdownChan in the 'select' statements instead of this function.
 //
 // This function doesn't block, it is thread-safe and can be called from any goroutine.
 func IsShuttingDown() bool {
 	return globalShutdownChanClosed.Load()
 }
 
-// WaitUntilGlobalShutdownInitiated blocks until global app shutdown is initiated.
+// WaitUntilAppShutdownInitiated blocks until global app shutdown is initiated.
 //
-// This function is thread-safe and can be called from any goroutine
-// sequentially or in parallel.
-func WaitUntilGlobalShutdownInitiated() {
+// This function is thread-safe and can be called from any goroutine.
+func WaitUntilAppShutdownInitiated() {
 	<-GlobalShutdownChan
 }
 
@@ -97,52 +99,40 @@ var (
 	sysSignalChan              chan os.Signal
 	sysSignalCancelChan        chan struct{}
 	sysSignalCancelConfirmChan chan struct{}
-	sysSignalOpInProgress      atomic.Bool
+	sysSignalOpLock            sync.Mutex
 	sysSignalsSetUpDone        bool
 )
 
-var (
-	ErrAlreadyEnabled  = errors.New("already enabled")
-	ErrAlreadyDisabled = errors.New("already disabled")
-)
-
-// EnableSignalInterception enables your app to intercept
-// os signals SIGINT and/or SIGTERM
-// to initiate graceful app shutdown
-// (SIGKILL can't be intercepted by user application).
+// ListenToOSSignals enables app to intercept
+// OS signals SIGINT and/or SIGTERM to initiate graceful shutdown
+// (SIGKILL can't be intercepted by a user application and thus is not listed as a parameter).
 //
-// Returns:
-// ErrBusy if previous operation is not complete;
-// ErrShuttingDown if app is already shutting down;
-// ErrAlreadyEnabled if already enabled.
+// This function doesn't block and is thread-safe.
+// Use StopOSSignalListening to revert the effect of calling this function if required.
 //
 // Example:
 //
 //	func main() {
 //		fmt.Println("== app started ==")
 //		// Start app tasks here in separate goroutines...
-//		_ = app.EnableSignalInterception(true, true)
-//		app.WaitUntilGlobalShutdownInitiated()
-//		// Do graceful shutdown routines here...
+//		app.ListenToOSSignals(true, true)
+//		app.WaitUntilAppShutdownInitiated()  // blocks until Ctrl+C pressed
+//		// Do graceful shutdown here...
 //		fmt.Println("== app exited ==")
 //	}
-func EnableSignalInterception(interceptSIGINT, interceptSIGTERM bool) error {
+func ListenToOSSignals(interceptSIGINT, interceptSIGTERM bool) {
 	if !(interceptSIGINT || interceptSIGTERM) {
-		return nil
+		return
 	}
-	swapped := sysSignalOpInProgress.CompareAndSwap(false, true)
-	if !swapped {
-		return ErrBusy
-	}
-	defer func() {
-		sysSignalOpInProgress.CompareAndSwap(true, false)
-	}()
+	sysSignalOpLock.Lock()
+	defer sysSignalOpLock.Unlock()
+
 	if IsShuttingDown() {
-		return ErrShuttingDown
+		return
 	}
 
 	if sysSignalsSetUpDone {
-		return ErrAlreadyEnabled
+		return
 	}
 
 	signals := make([]os.Signal, 0, 2)
@@ -168,37 +158,28 @@ func EnableSignalInterception(interceptSIGINT, interceptSIGTERM bool) error {
 
 	signal.Notify(sysSignalChan, signals...)
 	sysSignalsSetUpDone = true
-	return nil
 }
 
-// DisableSignalInterception cancels the effect of
-// previously called EnableSysSignalInterception
+// StopOSSignalListening cancels the effect of
+// previously called ListenToOSSignals
 // and disconnects system signals from global app shutdown mechanism.
 //
-// Returns:
-// ErrBusy if previous operation is not complete;
-// ErrShuttingDown if app is already shutting down;
-// ErrAlreadyDisabled if already canceled or not enabled.
-func DisableSignalInterception() error {
-	swapped := sysSignalOpInProgress.CompareAndSwap(false, true)
-	if !swapped {
-		return ErrBusy
-	}
-	defer func() {
-		sysSignalOpInProgress.CompareAndSwap(true, false)
-	}()
+// This function doesn't block and is thread-safe.
+// It is allowed to call ListenToOSSignals again after calling this function.
+func StopOSSignalListening() {
+	sysSignalOpLock.Lock()
+	defer sysSignalOpLock.Unlock()
 
 	if IsShuttingDown() {
-		return ErrShuttingDown
+		return
 	}
 
 	if !sysSignalsSetUpDone {
-		return ErrAlreadyDisabled
+		return
 	}
 
 	close(sysSignalCancelChan)
 	<-sysSignalCancelConfirmChan
-	return nil
 }
 
 // M is a global UnitManager for your app that is created automatically.

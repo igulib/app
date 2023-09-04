@@ -606,29 +606,19 @@ func TestMultipleConcurrentApiRequests(t *testing.T) {
 var sysSignalChan chan os.Signal
 
 func TestSignals(t *testing.T) {
-
-	err := app.EnableSignalInterception(true, true)
-	require.Equal(t, nil, err)
-
-	err = app.EnableSignalInterception(true, true)
-	require.Equal(t, app.ErrAlreadyEnabled, err)
-
-	err = app.DisableSignalInterception()
-	require.Equal(t, nil, err)
-
-	err = app.DisableSignalInterception()
-	require.Equal(t, app.ErrAlreadyDisabled, err)
-
-	err = app.EnableSignalInterception(true, true)
-	require.Equal(t, nil, err)
+	// Enable, disable, and re-enable listening to OS signals
+	app.ListenToOSSignals(true, true)
+	app.StopOSSignalListening()
+	app.ListenToOSSignals(true, true)
 
 	const total = 10
 	wg := sync.WaitGroup{}
 	wg.Add(total)
+	// Wait for app shutdown from multiple goroutines
 	for x := 0; x < total; x++ {
 		go func() {
 			defer wg.Done()
-			app.WaitUntilGlobalShutdownInitiated()
+			app.WaitUntilAppShutdownInitiated()
 			require.Equal(t, true, app.IsShuttingDown())
 		}()
 	}
@@ -636,11 +626,8 @@ func TestSignals(t *testing.T) {
 	sysSignalChan <- syscall.SIGINT // emulate SIGINT
 	wg.Wait()
 
-	err = app.EnableSignalInterception(true, true)
-	require.Equal(t, app.ErrShuttingDown, err)
-
-	err = app.DisableSignalInterception()
-	require.Equal(t, app.ErrShuttingDown, err)
+	app.ListenToOSSignals(true, true) // has no effect
+	app.StopOSSignalListening()       // has no effect
 
 	require.Equal(t, true, app.IsShuttingDown())
 }
