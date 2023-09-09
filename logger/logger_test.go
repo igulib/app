@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/igulib/app"
-	"github.com/igulib/telegram_notifier"
+	"github.com/igulib/app/telegram_notifier"
 	"github.com/rs/zerolog"
 
 	"github.com/stretchr/testify/require"
@@ -97,7 +97,7 @@ func teardown(m *testing.M) {
 
 func TestLoggerConfigParsed(t *testing.T) {
 
-	data, err := os.ReadFile("_test_data/TestLoggerConfig/c1.yaml")
+	data, err := os.ReadFile("test_data/TestLoggerConfig/c1.yaml")
 	require.Equal(t, nil, err)
 	testYamlConfig := string(data)
 
@@ -129,7 +129,7 @@ func TestAppLoggerBasicUsage(t *testing.T) {
 	testId++
 
 	testDir := createSubDir("TestAppLoggerBasicUsage")
-	configBytes, err := os.ReadFile("./_test_data/TestAppLoggerBasicUsage.yaml")
+	configBytes, err := os.ReadFile("./test_data/TestAppLoggerBasicUsage.yaml")
 	require.Equal(t, nil, err)
 
 	config, err := ParseYamlConfig([]byte(configBytes))
@@ -168,7 +168,7 @@ func TestLogRotation(t *testing.T) {
 	testId++
 
 	testDir := createSubDir("TestLogRotation")
-	configBytes, err := os.ReadFile("./_test_data/TestLogRotation.yaml")
+	configBytes, err := os.ReadFile("./test_data/TestLogRotation.yaml")
 	require.Equal(t, nil, err)
 
 	config, err := ParseYamlConfig([]byte(configBytes))
@@ -227,7 +227,7 @@ func TestTelegramNotifier(t *testing.T) {
 	testId++
 
 	testDir := createSubDir("TestTelegramNotifier")
-	configBytes, err := os.ReadFile("./_test_data/TestTelegramNotifier.yaml")
+	configBytes, err := os.ReadFile("./test_data/TestTelegramNotifier.yaml")
 	require.Equal(t, nil, err)
 
 	config, err := ParseYamlConfig([]byte(configBytes))
@@ -239,7 +239,7 @@ func TestTelegramNotifier(t *testing.T) {
 	}
 
 	// Create and start telegram_notifier unit
-	tgConfigBytes, err := os.ReadFile("./_test_data/TelegramNotifierConfig.yaml")
+	tgConfigBytes, err := os.ReadFile("./test_data/TelegramNotifierConfig.yaml")
 	require.Equal(t, nil, err)
 
 	// Create logger

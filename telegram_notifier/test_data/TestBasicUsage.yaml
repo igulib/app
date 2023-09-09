@@ -1,0 +1,5 @@
+
+bot_token_env_var: "BOT_TOKEN"
+chat_ids_env_var: "CHAT_IDS"
+log_levels: ["debug", "error", "fatal", "panic"]
+# log_only_with_prefixes: ["CI"]

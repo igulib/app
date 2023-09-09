@@ -3,5 +3,5 @@ chat_ids_env_var: "CHAT_IDS"
 
 # Settings starting with `log_` only have effect when integrated with igulib/app_logger.
 log_levels: ["debug", "info", "error", "fatal", "panic"]
-log_must_have_prefixes: ["IMPORTANT", "Important", "CI"]
+log_only_with_prefixes: ["CI"]
 log_date_time: true

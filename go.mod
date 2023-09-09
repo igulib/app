@@ -3,7 +3,7 @@ module github.com/igulib/app
 go 1.20
 
 require (
-	github.com/igulib/telegram_notifier v0.0.0-20230903172910-8730d2438f59
+	github.com/nikoksr/notify v0.41.0
 	github.com/rs/zerolog v1.30.0
 	github.com/stretchr/testify v1.8.4
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
@@ -13,10 +13,9 @@ require (
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/go-telegram-bot-api/telegram-bot-api v4.6.4+incompatible // indirect
-	github.com/kr/text v0.2.0 // indirect
+	github.com/kr/pretty v0.3.1 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.19 // indirect
-	github.com/nikoksr/notify v0.41.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/technoweenie/multipartstreamer v1.0.1 // indirect
