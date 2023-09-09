@@ -612,27 +612,6 @@ func (um *UnitManager) pauseAsync(unitName string, timeoutMillis ...int64) (int6
 		timeout)
 }
 
-/*
-// Pause pauses the unit and blocks until complete.
-func (um *UnitManager) Pause(unitName string, timeoutMillis ...int64) error {
-	um.opLock.Lock()
-	defer um.opLock.Unlock()
-
-	id, err := um.pauseAsync(unitName, timeoutMillis...)
-	if err != nil {
-		return err
-	}
-	r := um.WaitUntilComplete()
-	if r.OpId != id {
-		return ErrOperationIdMismatch
-	}
-	if !r.OK {
-		return r.ResultMap[unitName].CollateralError
-	}
-	return nil
-}
-*/
-
 // Pause pauses the unit and blocks until complete.
 // Output parameters:
 //
@@ -699,29 +678,6 @@ func (um *UnitManager) quitAsync(unitName string, timeoutMillis ...int64) (int64
 		lcmQuit,
 		timeout)
 }
-
-/*
-// Quit quits the unit and blocks until complete.
-func (um *UnitManager) Quit(unitName string, timeoutMillis ...int64) error {
-	um.opLock.Lock()
-	defer um.opLock.Unlock()
-
-	id, err := um.quitAsync(unitName, timeoutMillis...)
-
-	if err != nil {
-		return err
-	}
-
-	r := um.WaitUntilComplete()
-	if r.OpId != id {
-		return ErrOperationIdMismatch
-	}
-	if !r.OK {
-		return r.ResultMap[unitName].CollateralError
-	}
-	return nil
-}
-*/
 
 // Quit quits the unit and blocks until complete.
 // Output parameters:
@@ -1390,11 +1346,9 @@ func (um *UnitManager) QuitAll() (UnitManagerOperationResult, error) {
 	defer um.opLock.Unlock()
 
 	opId, failedUnits, err := um.quitAllAsync()
-	// r := UnitManagerOperationResult{
-	// 	ResultMap: make(map[string]UnitOperationResult, 0),
-	// }
 
 	// quitAllAsync will try quit those units that are in correct state
+	// TODO: test edge cases: empty scheme, all in bad state, all quit.
 	r := um.WaitUntilComplete()
 	if err != nil {
 		for _, failedUnit := range failedUnits {
