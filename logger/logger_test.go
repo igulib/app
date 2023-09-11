@@ -102,14 +102,14 @@ func TestLoggerConfigParsed(t *testing.T) {
 	testYamlConfig := string(data)
 
 	var expectedTestConfig = &Config{
-		LogFiles: []*FileOutputConfig{
+		LogFiles: []FileOutputConfig{
 			{
 				Path:            "logs/test.log",
 				FilePermissions: 0660,
 				DirPermissions:  0775,
 			},
 		},
-		Console: []*ConsoleOutputConfig{
+		Console: []ConsoleOutputConfig{
 			{
 				Prettify: true,
 			},

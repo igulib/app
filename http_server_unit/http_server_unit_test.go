@@ -2,6 +2,7 @@ package http_server_unit
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -9,7 +10,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/igulib/app"
+	"github.com/igulib/app/logger/gin_zerolog"
 	"github.com/stretchr/testify/require"
 )
 
@@ -73,8 +76,8 @@ func teardown(m *testing.M) {
 
 // TEST SETUP END
 
-func doTestGetHttpRequest() (int, error) {
-	apiUrl := "http://localhost:8778"
+func doTestGetHttpRequest(port string) (int, error) {
+	apiUrl := "http://localhost:" + port
 	resource := "/test/"
 	data := url.Values{}
 
@@ -94,7 +97,47 @@ func doTestGetHttpRequest() (int, error) {
 	// r.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := client.Do(req)
-	return resp.StatusCode, err
+	if resp != nil {
+		return resp.StatusCode, err
+	}
+	return 0, err
+}
+
+func TestBasicUsage(t *testing.T) {
+
+	configBytes, err := os.ReadFile("./test_data/TestBasicUsage.yaml")
+	require.Equal(t, nil, err)
+
+	config, err := ParseYamlConfig([]byte(configBytes))
+	require.Equal(t, nil, err)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/test/", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "Test was successful.")
+	})
+
+	unitName := "http_server_unit_1"
+	u, err := AddNew(unitName, config, mux)
+	require.Equal(t, nil, err, "http_server_unit must be created and added successfully")
+
+	require.Equal(t, app.UNotAvailable, u.UnitAvailability())
+
+	_, err = app.M.Start(unitName)
+	require.Equal(t, nil, err, "http_server_unit must start successfully")
+	require.Equal(t, app.UAvailable, u.UnitAvailability())
+
+	statusCode, err := doTestGetHttpRequest(config.Port)
+
+	require.Equal(t, nil, err)
+	require.Equal(t, 200, statusCode)
+
+	_, err = app.M.Pause(unitName)
+	require.Equal(t, nil, err, "http_server_unit must pause successfully")
+	require.Equal(t, app.UTemporarilyUnavailable, u.UnitAvailability())
+
+	_, err = app.M.Quit(unitName)
+	require.Equal(t, nil, err, "http_server_unit must quit successfully")
+	require.Equal(t, app.UNotAvailable, u.UnitAvailability())
 }
 
 func TestHttpServerUnitWithGinGonicHandler(t *testing.T) {
@@ -105,23 +148,45 @@ func TestHttpServerUnitWithGinGonicHandler(t *testing.T) {
 	config, err := ParseYamlConfig([]byte(configBytes))
 	require.Equal(t, nil, err)
 
-	unitName := "http_server_unit"
-	_, err = AddNew(unitName, config)
+	// Gin router
+	gin.SetMode(gin.ReleaseMode)
+
+	r := gin.New() // empty engine instead of the default one
+	ginLoggerConfig := &gin_zerolog.Config{}
+	ginLoggerMiddleware, err := gin_zerolog.NewMiddleware(ginLoggerConfig)
+	require.Equal(t, nil, err)
+	r.Use(ginLoggerMiddleware) // add logger middleware
+	r.Use(gin.Recovery())      // add the default recovery middleware
+
+	r.GET("/test", func(c *gin.Context) {
+		c.String(http.StatusOK, "Test was successful.")
+	})
+
+	// Custom page 404
+	r.NoRoute(func(c *gin.Context) {
+		c.String(http.StatusNotFound, "The page you requested does not exist.")
+	})
+
+	unitName := "http_server_unit_2"
+	u, err := AddNew(unitName, config, r)
 	require.Equal(t, nil, err, "http_server_unit must be created and added successfully")
+
+	require.Equal(t, app.UNotAvailable, u.UnitAvailability())
 
 	_, err = app.M.Start(unitName)
 	require.Equal(t, nil, err, "http_server_unit must start successfully")
+	require.Equal(t, app.UAvailable, u.UnitAvailability())
 
-	// time.Sleep(100 * time.Millisecond)
-
-	statusCode, err := doTestGetHttpRequest()
+	statusCode, err := doTestGetHttpRequest(config.Port)
 
 	require.Equal(t, nil, err)
 	require.Equal(t, 200, statusCode)
 
 	_, err = app.M.Pause(unitName)
 	require.Equal(t, nil, err, "http_server_unit must pause successfully")
+	require.Equal(t, app.UTemporarilyUnavailable, u.UnitAvailability())
 
 	_, err = app.M.Quit(unitName)
 	require.Equal(t, nil, err, "http_server_unit must quit successfully")
+	require.Equal(t, app.UNotAvailable, u.UnitAvailability())
 }

@@ -21,3 +21,6 @@ main
 temp/
 _temp/
 
+# Log directories at any level
+log/
+logs/

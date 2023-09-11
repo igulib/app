@@ -6,41 +6,44 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
-	"path"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/igulib/app"
 	"github.com/igulib/app/logger"
 	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 )
 
 // HttpServerUnit implements app.IUnit
 type HttpServerUnit struct {
-	config               *Config
+	config               *validatedConfig
 	unitRunner           *app.UnitLifecycleRunner
 	unitAvailability     app.UnitAvailability
 	unitAvailabilityLock sync.Mutex
 	logger               zerolog.Logger
+
+	rootHandler http.Handler
 
 	ginServiceRunning atomic.Bool
 	srv               *http.Server
 	srvStartComplete  chan error
 }
 
-func New(unitName string, c *Config) (*HttpServerUnit, error) {
-	if err := c.ValidateConfig(); err != nil {
-		return nil, err
+func New(unitName string, c *Config, rootHandler http.Handler) (*HttpServerUnit, error) {
+	if c == nil {
+		return nil, errors.New("http_server_unit config must not be nil")
+	}
+	vc, err := c.ValidateConfig()
+	if err != nil {
+		return nil, fmt.Errorf("http_server_unit failed to validate config: %w", err)
 	}
 
 	u := &HttpServerUnit{
-		config:     c,
-		unitRunner: app.NewUnitLifecycleRunner(unitName),
-		logger:     logger.Get().With().Str("unit", unitName).Logger(),
+		config:      vc,
+		unitRunner:  app.NewUnitLifecycleRunner(unitName),
+		logger:      logger.Get().With().Str("unit", unitName).Logger(),
+		rootHandler: rootHandler,
 	}
 
 	u.unitRunner.SetOwner(u)
@@ -49,8 +52,8 @@ func New(unitName string, c *Config) (*HttpServerUnit, error) {
 
 // AddNew creates HttpServerUnit with specified configuration and
 // adds it to the igulib/app.M
-func AddNew(unitName string, c *Config) (*HttpServerUnit, error) {
-	u, err := New(unitName, c)
+func AddNew(unitName string, c *Config, rootHandler http.Handler) (*HttpServerUnit, error) {
+	u, err := New(unitName, c, rootHandler)
 	if err != nil {
 		return u, err
 	}
@@ -74,12 +77,6 @@ func (u *HttpServerUnit) UnitStart() app.UnitOperationResult {
 		u.srvStartComplete = make(chan error)
 		go u.runGinService()
 		err = <-u.srvStartComplete
-
-		// TODO: remove!
-		// There is no straightforward and easy
-		// way to know when the http server starts,
-		// so use a reasonable delay.
-		// time.Sleep(200 * time.Millisecond)
 	}
 
 	r := app.UnitOperationResult{
@@ -111,7 +108,7 @@ func (u *HttpServerUnit) UnitQuit() app.UnitOperationResult {
 
 	// Create a context with timeout equal to config.ShutdownGracePeriod
 	ctxTimeout, cancel := context.WithTimeout(context.Background(),
-		time.Duration(u.config.validatedShutdownPeriodMillis)*time.Millisecond)
+		time.Duration(u.config.ShutdownPeriodMillis)*time.Millisecond)
 	defer cancel()
 
 	r := app.UnitOperationResult{}
@@ -138,55 +135,12 @@ func (u *HttpServerUnit) UnitRunner() *app.UnitLifecycleRunner {
 func (u *HttpServerUnit) runGinService() {
 	logger := u.logger
 
-	gin.SetMode(gin.ReleaseMode)
-
-	r := gin.New()        // empty engine instead of the default one
-	r.Use(GinSetLogger()) // adds our new middleware
-	r.Use(gin.Recovery()) // adds the default recovery middleware
-
-	r.Static("/public", u.config.validatedAssetsDir)
-
-	r.GET("favicon.ico", func(c *gin.Context) {
-		defaultIcon := path.Join(u.config.validatedAssetsDir, "favicon.ico")
-		file, _ := os.ReadFile(defaultIcon)
-		c.Data(
-			http.StatusOK,
-			"image/x-icon",
-			file,
-		)
-	})
-
-	r.GET("/quit", func(c *gin.Context) {
-		c.String(http.StatusOK, "Server was quit successfully.")
-		_ = app.InitiateShutdown()
-		time.Sleep(1000 * time.Millisecond)
-	})
-
-	r.GET("/notify-telegram", func(c *gin.Context) {
-		msg, _ := c.GetQuery("msg")
-		if msg == "" {
-			msg = "Greetings from gin_server!"
-		}
-		log.Info().Msgf("Important: %s", msg)
-		c.String(http.StatusOK, "Notification message sent.")
-	})
-
-	r.GET("/test", func(c *gin.Context) {
-		c.String(http.StatusOK, "Test was successful.")
-	})
-
-	// Custom page 404
-	r.NoRoute(func(c *gin.Context) {
-		c.String(http.StatusNotFound, "The page you requested does not exist.")
-		// c.Redirect(http.StatusFound, "/error/")
-	})
-
 	// Specify listen host and port
-	hostAndPort := fmt.Sprintf("%s:%s", u.config.validatedHost,
-		u.config.validatedPort)
+	hostAndPort := fmt.Sprintf("%s:%s", u.config.Host,
+		u.config.Port)
 	u.srv = &http.Server{
 		Addr:    hostAndPort,
-		Handler: r,
+		Handler: u.rootHandler,
 	}
 
 	u.logger.Info().Msgf("(HttpServerUnit) listening on %s.", hostAndPort)
@@ -202,7 +156,7 @@ func (u *HttpServerUnit) runGinService() {
 
 	if err := u.srv.Serve(listener); err != nil {
 		if errors.Is(err, http.ErrServerClosed) {
-			// ErrServerClosed means server is shutting down
+			// Server was shut down (not an error)
 		} else {
 			// Unexpected error
 			u.unitAvailabilityLock.Lock()
@@ -211,18 +165,5 @@ func (u *HttpServerUnit) runGinService() {
 			logger.Error().Msgf("(HttpServerUnit) Serve error: %s\n", err)
 		}
 	}
-
-	// if err := u.srv.ListenAndServe(); err != nil {
-	// 	if errors.Is(err, http.ErrServerClosed) {
-	// 		// ErrServerClosed means server is shutting down
-	// 	} else {
-	// 		// Unexpected error
-	// 		u.unitAvailabilityLock.Lock()
-	// 		u.unitAvailability = app.UNotAvailable
-	// 		u.unitAvailabilityLock.Unlock()
-	// 		logger.Error().Msgf("(HttpServerUnit) ListenAndServe error: %s\n", err)
-	// 	}
-	// }
-
 	u.ginServiceRunning.Store(false)
 }

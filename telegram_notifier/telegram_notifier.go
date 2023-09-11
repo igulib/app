@@ -61,6 +61,8 @@ var (
 )
 
 type Config struct {
+	Enabled bool `yaml:"enabled" json:"enabled" toml:"enabled"`
+
 	// BotToken specifies the Telegram bot secret token.
 	BotToken string `yaml:"bot_token" json:"bot_token"`
 

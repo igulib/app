@@ -79,8 +79,8 @@ type Config struct {
 	// The local time is used by default.
 	UseUTC bool `yaml:"use_utc" json:"use_utc"`
 
-	LogFiles []*FileOutputConfig    `yaml:"log_files" json:"log_files"`
-	Console  []*ConsoleOutputConfig `yaml:"console" json:"console"`
+	LogFiles []FileOutputConfig    `yaml:"log_files" json:"log_files"`
+	Console  []ConsoleOutputConfig `yaml:"console" json:"console"`
 }
 
 type validatedConfig struct {
@@ -290,7 +290,7 @@ func validateConfig(c *Config) (*validatedConfig, error) {
 
 	// Validate file output config
 	for _, fc := range c.LogFiles {
-		valFileConfig, err := validateFileOutputConfig(fc)
+		valFileConfig, err := validateFileOutputConfig(&fc)
 		v.LogFiles = append(v.LogFiles, valFileConfig)
 		if err != nil {
 			return v, err
@@ -299,7 +299,7 @@ func validateConfig(c *Config) (*validatedConfig, error) {
 
 	// Validate console output config
 	for _, cc := range c.Console {
-		valConsoleConfig, err := validateConsoleOutputConfig(cc)
+		valConsoleConfig, err := validateConsoleOutputConfig(&cc)
 		v.Console = append(v.Console, valConsoleConfig)
 		if err != nil {
 			return v, err
