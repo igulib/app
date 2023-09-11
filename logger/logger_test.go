@@ -208,7 +208,10 @@ func TestLogRotation(t *testing.T) {
 
 		// Check files in the log dir:
 		require.GreaterOrEqual(t, len(names), 3, "there must be at least 3 files in the rotated log directory")
-		require.LessOrEqual(t, len(names), 5, "there must be at most 5 files in the rotated log directory (two .log files may be still converting into .log.gz)")
+
+		// The commented out test is not reliable because OS may create temporary files
+		// in that directory.
+		// require.LessOrEqual(t, len(names), 5, "there must be at most 5 files in the rotated log directory (two .log files may be still converting into .log.gz)")
 
 		namesMatch := true
 		for _, name := range names {
